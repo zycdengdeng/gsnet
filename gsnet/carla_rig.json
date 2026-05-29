@@ -1,0 +1,15 @@
+{
+  "_comment": "Actual CARLA rig (radius-0.75 dodecagon around ego). location=[x,y,z] meters (CARLA x-forward,y-right,z-up; z=sensor_h is identical for all and cancels), rotation degrees (pitch,yaw,roll). 0.4330127 = 0.25*sqrt(3). Odd cams=source, even cams=target.",
+  "cam01": {"location": [0.75,       0.0,       0.0], "rotation": {"pitch": 0.0, "yaw": 0.0,   "roll": 0.0}},
+  "cam02": {"location": [0.75,       0.4330127, 0.0], "rotation": {"pitch": 0.0, "yaw": 30.0,  "roll": 0.0}},
+  "cam03": {"location": [0.4330127,  0.75,      0.0], "rotation": {"pitch": 0.0, "yaw": 60.0,  "roll": 0.0}},
+  "cam04": {"location": [0.0,        0.75,      0.0], "rotation": {"pitch": 0.0, "yaw": 90.0,  "roll": 0.0}},
+  "cam05": {"location": [-0.4330127, 0.75,      0.0], "rotation": {"pitch": 0.0, "yaw": 120.0, "roll": 0.0}},
+  "cam06": {"location": [-0.75,      0.4330127, 0.0], "rotation": {"pitch": 0.0, "yaw": 150.0, "roll": 0.0}},
+  "cam07": {"location": [-0.75,      0.0,       0.0], "rotation": {"pitch": 0.0, "yaw": 180.0, "roll": 0.0}},
+  "cam08": {"location": [-0.75,      -0.4330127,0.0], "rotation": {"pitch": 0.0, "yaw": 210.0, "roll": 0.0}},
+  "cam09": {"location": [-0.4330127, -0.75,     0.0], "rotation": {"pitch": 0.0, "yaw": 240.0, "roll": 0.0}},
+  "cam10": {"location": [0.0,        -0.75,     0.0], "rotation": {"pitch": 0.0, "yaw": 270.0, "roll": 0.0}},
+  "cam11": {"location": [0.4330127,  -0.75,     0.0], "rotation": {"pitch": 0.0, "yaw": 300.0, "roll": 0.0}},
+  "cam12": {"location": [0.75,       -0.4330127,0.0], "rotation": {"pitch": 0.0, "yaw": 330.0, "roll": 0.0}}
+}

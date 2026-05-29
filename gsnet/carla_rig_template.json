@@ -1,0 +1,15 @@
+{
+  "_comment": "CARLA mounting transform of each camera relative to the ego vehicle. Fill in real values from your CARLA data-generation script. location = [x, y, z] in meters (CARLA: x-forward, y-right, z-up). rotation = degrees as in carla.Transform.rotation (pitch, yaw, roll). Odd cams (01,03,05,07,09,11) are the source; even cams (02,...,12) are the targets whose poses we derive.",
+  "cam01": {"location": [0.0, 0.0, 0.0], "rotation": {"pitch": 0.0, "yaw": 0.0,   "roll": 0.0}},
+  "cam02": {"location": [0.0, 0.0, 0.0], "rotation": {"pitch": 0.0, "yaw": 30.0,  "roll": 0.0}},
+  "cam03": {"location": [0.0, 0.0, 0.0], "rotation": {"pitch": 0.0, "yaw": 60.0,  "roll": 0.0}},
+  "cam04": {"location": [0.0, 0.0, 0.0], "rotation": {"pitch": 0.0, "yaw": 90.0,  "roll": 0.0}},
+  "cam05": {"location": [0.0, 0.0, 0.0], "rotation": {"pitch": 0.0, "yaw": 120.0, "roll": 0.0}},
+  "cam06": {"location": [0.0, 0.0, 0.0], "rotation": {"pitch": 0.0, "yaw": 150.0, "roll": 0.0}},
+  "cam07": {"location": [0.0, 0.0, 0.0], "rotation": {"pitch": 0.0, "yaw": 180.0, "roll": 0.0}},
+  "cam08": {"location": [0.0, 0.0, 0.0], "rotation": {"pitch": 0.0, "yaw": 210.0, "roll": 0.0}},
+  "cam09": {"location": [0.0, 0.0, 0.0], "rotation": {"pitch": 0.0, "yaw": 240.0, "roll": 0.0}},
+  "cam10": {"location": [0.0, 0.0, 0.0], "rotation": {"pitch": 0.0, "yaw": 270.0, "roll": 0.0}},
+  "cam11": {"location": [0.0, 0.0, 0.0], "rotation": {"pitch": 0.0, "yaw": 300.0, "roll": 0.0}},
+  "cam12": {"location": [0.0, 0.0, 0.0], "rotation": {"pitch": 0.0, "yaw": 330.0, "roll": 0.0}}
+}
