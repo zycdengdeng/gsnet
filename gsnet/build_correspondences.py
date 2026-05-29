@@ -124,6 +124,7 @@ def main():
     ap.add_argument("--radius_margin", type=float, default=1.5)
     ap.add_argument("--opacity_min", type=float, default=0.005)
     ap.add_argument("--sor_k", type=int, default=0, help="0 disables statistical outlier removal")
+    ap.add_argument("--workers", type=int, default=1, help="parallel CPU workers (batch mode)")
     args = ap.parse_args()
 
     filt = dict(radius_margin=args.radius_margin, opacity_min=args.opacity_min,
@@ -133,12 +134,20 @@ def main():
     if args.batch:
         assert args.io_dir and args.sparse_root and args.out_dir
         seqs = discover_training_sequences(args.io_dir, args.sparse_root)
-        print(f"[batch] {len(seqs)} training sequences")
+        print(f"[batch] {len(seqs)} training sequences, workers={args.workers}")
         t0 = time.time()
-        stats = []
-        for sid, sparse, gdense in seqs:
-            stats.append(build_for_sequence(
-                sparse, gdense, os.path.join(args.out_dir, f"{sid}.npz"), **common))
+        tasks = [(sparse, gdense, os.path.join(args.out_dir, f"{sid}.npz"))
+                 for sid, sparse, gdense in seqs]
+        if args.workers and args.workers > 1:
+            import concurrent.futures as cf
+            stats = []
+            with cf.ProcessPoolExecutor(max_workers=args.workers) as ex:
+                futs = [ex.submit(build_for_sequence, s, g, o, **common)
+                        for s, g, o in tasks]
+                for f in cf.as_completed(futs):
+                    stats.append(f.result())
+        else:
+            stats = [build_for_sequence(s, g, o, **common) for s, g, o in tasks]
         total = time.time() - t0
         log = dict(total_seconds=total, sequences=stats)
         os.makedirs(args.out_dir, exist_ok=True)

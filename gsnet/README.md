@@ -41,22 +41,27 @@ Images 1–60 per sequence map to source cameras `1,3,5,7,9,11` (10 frames each)
 python -m gsnet.inspect_ply --ply sparse_point/S01/101_sparse.ply \
     --gdense input_output/output_101_dense/point_cloud/iteration_30000/point_cloud.ply
 
-# 1. Build pseudo-GT correspondences for all training sequences
+# 1. Build pseudo-GT correspondences for all training sequences (CPU; --workers N)
 python -m gsnet.build_correspondences --batch \
     --io_dir /mnt/zihanw/carla/input_output \
     --sparse_root /mnt/zihanw/carla/sparse_point \
-    --out_dir CORR/train          # -> CORR/train/*.npz + build_times.json
+    --out_dir CORR/train --workers 8   # -> CORR/train/*.npz + build_times.json
 
 # 2. Train GS-Net (200 epochs, batch 512, Adam 1e-3; logs train_times.json)
-python -m gsnet.train_gsnet --corr_dir CORR/train --out_dir runs/gsnet
+CUDA_VISIBLE_DEVICES=4 python -m gsnet.train_gsnet --corr_dir CORR/train --out_dir runs/gsnet
 
-# 3+4. SSE evaluation: baseline 3DGS vs GS-Net+3DGS on the 5 test sequences
+# 3+4. SSE evaluation across 4 GPUs: baseline 3DGS vs GS-Net+3DGS on 5 test seqs
 python -m gsnet.run_sse \
     --io_dir /mnt/zihanw/carla/input_output \
     --sparse_root /mnt/zihanw/carla/sparse_point \
     --ckpt runs/gsnet/gsnet_latest.pt \
-    --out_dir runs/sse            # -> runs/sse/sse_results.{json,md}
+    --out_dir runs/sse --gpus 4 5 6 7   # -> runs/sse/sse_results.{json,md}
 ```
+
+GPU scheduling: SSE has 10 independent jobs (5 seqs × {baseline, gsnet}); they
+are distributed one-per-GPU across `--gpus` (each 3DGS run pinned via
+`CUDA_VISIBLE_DEVICES`). GS-Net training is a tiny MLP — one GPU suffices.
+Correspondence building is CPU-only — use `--workers`.
 
 `run_sse.py` records GS-Net inference time + 3DGS optimization time + PSNR/SSIM/
 LPIPS per sequence and the averages, mirroring the paper's SSE table and
