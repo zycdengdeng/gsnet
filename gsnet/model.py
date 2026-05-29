@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 import torch
 import torch.nn as nn
 
+from .encoders import build_encoder, _mlp
+
 
 def quat_to_rot(q: torch.Tensor) -> torch.Tensor:
     """Device-agnostic, batched unit-quaternion -> rotation matrix.
@@ -42,15 +44,6 @@ def quat_to_rot(q: torch.Tensor) -> torch.Tensor:
     return R
 
 
-def _mlp(dims, act=nn.ReLU, last_act=True):
-    layers = []
-    for i in range(len(dims) - 1):
-        layers.append(nn.Linear(dims[i], dims[i + 1]))
-        if i < len(dims) - 2 or last_act:
-            layers.append(act())
-    return nn.Sequential(*layers)
-
-
 @dataclass
 class GSNetConfig:
     # Input point feature: position (3) + color (3) = 6-d raw feature.
@@ -67,6 +60,9 @@ class GSNetConfig:
     M: int = 3
     # Hidden layout for the shared point encoder (6 -> ... -> embed_dim).
     point_mlp_hidden: tuple = (64, 128)
+    # Geometry-aware encoder variant (encoder-design ablation):
+    #   mlp_only | concat (Ours) | edgeconv | attention | geom
+    encoder_type: str = "concat"
     # Bound (in scene units) applied to the Tanh-activated position offset.
     # Paper bounds the raw offset to (-1, 1); set >1 if the scene is metric and
     # the K nearest dense Gaussians may sit farther than 1 unit from the SfM point.
@@ -96,15 +92,8 @@ class GSNet(nn.Module):
         self.cfg = cfg
         T = cfg.T
 
-        # Weight-shared per-point encoder: 6 -> ... -> embed_dim (f_n).
-        self.point_encoder = _mlp(
-            (cfg.in_dim, *cfg.point_mlp_hidden, cfg.embed_dim)
-        )
-
-        # Context aggregator h_Theta: concat(center, M neighbors) -> F_n.
-        self.context_encoder = _mlp(
-            (cfg.embed_dim * (cfg.M + 1), cfg.context_dim, cfg.context_dim)
-        )
+        # Geometry-aware feature encoding (pluggable; Sec. IV-A / Eq. 3).
+        self.encoder = build_encoder(cfg)
 
         # Per-attribute prediction heads, each emitting T * dim values from F_n.
         self.shared_decoder = _mlp((cfg.context_dim, cfg.decoder_dim), last_act=True)
@@ -113,23 +102,6 @@ class GSNet(nn.Module):
         self.head_quat = nn.Linear(cfg.decoder_dim, T * 4)  # q_hat
         self.head_scale = nn.Linear(cfg.decoder_dim, T * 3)  # s_hat
         self.head_opacity = nn.Linear(cfg.decoder_dim, T * 1)  # alpha_hat
-
-    # ------------------------------------------------------------------ #
-    def encode(self, center_feat: torch.Tensor, neighbor_feat: torch.Tensor):
-        """Geometry-aware feature encoding (Eq. 3).
-
-        Args:
-            center_feat:   (B, 6)        raw [xyz; rgb] of each point.
-            neighbor_feat: (B, M, 6)     raw [xyz; rgb] of its M neighbors.
-        Returns:
-            F_n: (B, context_dim)
-        """
-        f_center = self.point_encoder(center_feat)               # (B, d)
-        f_neigh = self.point_encoder(neighbor_feat)              # (B, M, d)
-        cat = torch.cat(
-            [f_center, f_neigh.flatten(start_dim=1)], dim=-1
-        )                                                        # (B, (M+1)*d)
-        return self.context_encoder(cat)                         # (B, D)
 
     # ------------------------------------------------------------------ #
     def forward(self, center_xyz, center_rgb, neighbor_xyz, neighbor_rgb):
@@ -149,7 +121,7 @@ class GSNet(nn.Module):
         center_feat = torch.cat([center_xyz, center_rgb], dim=-1)
         neighbor_feat = torch.cat([neighbor_xyz, neighbor_rgb], dim=-1)
 
-        F = self.encode(center_feat, neighbor_feat)              # (B, D)
+        F = self.encoder(center_feat, neighbor_feat, center_xyz, neighbor_xyz)  # (B, D)
         h = self.shared_decoder(F)                               # (B, decoder_dim)
 
         # --- Position: incremental, bounded by Tanh (Eq. 4) ---

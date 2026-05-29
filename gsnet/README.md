@@ -67,6 +67,40 @@ Correspondence building is CPU-only — use `--workers`.
 LPIPS per sequence and the averages, mirroring the paper's SSE table and
 efficiency comparison.
 
+## Encoder-design ablation (rebuttal)
+
+The geometry-aware encoder is **pluggable** via `cfg.encoder_type`
+(`gsnet/encoders.py`); everything else (expansion head, losses, `T`, `M`,
+normalization, training schedule, SSE protocol) is held fixed:
+
+| `encoder_type` | Encoder |
+|----------------|---------|
+| `mlp_only` | (a) per-point MLP, no neighborhood aggregation (lower bound) |
+| `concat` | (b) center+neighbor concat → MLP (**Ours**) |
+| `edgeconv` | (c) EdgeConv / DGCNN graph encoder (edge feats + max-pool) |
+| `attention` | (d) local self-attention (lightweight point-transformer) |
+| `geom` | (e) explicit geometry: relative coords + distance |
+
+Run the full ablation (trains all variants across GPUs, then full SSE on the 5
+test sequences, then aggregates PSNR/SSIM/LPIPS + #params + train/infer time):
+
+```bash
+python -m gsnet.run_encoder_ablation \
+    --corr_dir CORR/train \
+    --io_dir /mnt/zihanw/carla/input_output \
+    --sparse_root /mnt/zihanw/carla/sparse_point \
+    --out_dir runs/encoder_ablation --gpus 4 5 6 7
+# -> runs/encoder_ablation/encoder_ablation.{md,json}
+```
+
+The `concat` variant retrained here is the canonical **Ours** model (consistent
+with all variants under the new code) and can also be used as `--ckpt` for the
+main GS-Net SSE runs.
+
+> Note: this refactor renamed the encoder submodules, so checkpoints trained
+> before it (old `point_encoder`/`context_encoder` keys) are not loadable by the
+> new code — retrain via the ablation (fast).
+
 ## Design notes
 
 - **Sparse source.** GS-Net always consumes the *sparse* SfM (`*_sparse.ply`),

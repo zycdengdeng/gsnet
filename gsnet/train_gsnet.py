@@ -27,7 +27,10 @@ def train(args):
         T=args.T, M=args.M,
         embed_dim=args.embed_dim, context_dim=args.context_dim,
         pos_offset_scale=args.pos_offset_scale,
+        encoder_type=args.encoder_type,
     )
+    n_params = sum(p.numel() for p in GSNet(cfg).parameters())
+    print(f"[cfg] encoder={cfg.encoder_type}  params={n_params/1e3:.1f}K")
 
     ds = CorrespondenceDataset(args.corr_dir)
     dl = DataLoader(ds, batch_size=args.batch_size, shuffle=True,
@@ -91,6 +94,8 @@ def main():
     ap.add_argument("--embed_dim", type=int, default=128)
     ap.add_argument("--context_dim", type=int, default=256)
     ap.add_argument("--pos_offset_scale", type=float, default=1.0)
+    ap.add_argument("--encoder_type", default="concat",
+                    choices=["mlp_only", "concat", "edgeconv", "attention", "geom"])
     ap.add_argument("--num_workers", type=int, default=4)
     ap.add_argument("--log_every", type=int, default=1)
     ap.add_argument("--save_every", type=int, default=50)
