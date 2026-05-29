@@ -79,6 +79,10 @@ class Scene:
                                                            "point_cloud",
                                                            "iteration_" + str(self.loaded_iter),
                                                            "point_cloud.ply"), args.train_test_exp)
+        elif getattr(args, "gsnet_init", ""):
+            # Plug-and-play: initialize from GS-Net predicted dense Gaussians.
+            print("Initializing Gaussians from GS-Net prediction:", args.gsnet_init)
+            self.gaussians.create_from_ply(args.gsnet_init, scene_info.train_cameras, self.cameras_extent)
         else:
             self.gaussians.create_from_pcd(scene_info.point_cloud, scene_info.train_cameras, self.cameras_extent)
 

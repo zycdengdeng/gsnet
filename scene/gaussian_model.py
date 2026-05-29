@@ -175,6 +175,22 @@ class GaussianModel:
         exposure = torch.eye(3, 4, device="cuda")[None].repeat(len(cam_infos), 1, 1)
         self._exposure = nn.Parameter(exposure.requires_grad_(True))
 
+    def create_from_ply(self, path : str, cam_infos : int, spatial_lr_scale : float):
+        """Initialize Gaussians for training from an existing .ply (e.g. a GS-Net
+        prediction), reusing load_ply and then setting up the remaining training
+        state that create_from_pcd would normally provide."""
+        self.spatial_lr_scale = spatial_lr_scale
+        self.load_ply(path)
+        # load_ply sets active_sh_degree to max; start from 0 like a fresh init so
+        # spherical harmonics are introduced progressively during optimization.
+        self.active_sh_degree = 0
+        print("Number of points at initialisation : ", self._xyz.shape[0])
+        self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+        self.exposure_mapping = {cam_info.image_name: idx for idx, cam_info in enumerate(cam_infos)}
+        self.pretrained_exposures = None
+        exposure = torch.eye(3, 4, device="cuda")[None].repeat(len(cam_infos), 1, 1)
+        self._exposure = nn.Parameter(exposure.requires_grad_(True))
+
     def training_setup(self, training_args):
         self.percent_dense = training_args.percent_dense
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
