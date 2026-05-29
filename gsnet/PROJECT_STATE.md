@@ -15,11 +15,11 @@
 ## 0.5 运行中的实验 / tmux 位置（用户维护，尽力同步）
 | tmux | 内容 | 状态 |
 |---|---|---|
-| zyc1 | 最初的 concat 训练（旧代码，已被 encoder 消融取代）| 已弃用/可 kill |
-| zyc3 | 先后跑过 CARLA 基线 SSE、Waymo 诊断 | 已完成 |
-| zyc4 | CSE 110 基线自检（`run_cse --ids 110 --skip_gsnet`）| 进行中 |
-| (未知名) | encoder 消融 `run_encoder_ablation`（GPU 3-6）| 进行中 |
-> 备注：GPU 占用以 `nvidia-smi` 为准；CSE/Waymo 等重活按当时空闲卡填 `--gpus`。
+| zyc1 | **encoder 消融** `run_encoder_ablation` | 进行中 |
+| zyc3 | 历: CARLA 基线 SSE(done)、Waymo 诊断(done)、Waymo G_dense(done) → 现 **Waymo GS-Net 训练**(卡1) | 进行中 |
+| zyc4 | 历: CSE 110 基线自检(done) → 现 **监督质量敏感性** `run_supervision_sensitivity` | 进行中 |
+> 备注：GPU 占用以 `nvidia-smi` 为准；重活按当时空闲卡填 `--gpus`。
+> 待回收结果：① 110 CSE 基线 PSNR(`runs/cse_check/cse_results.md`，验证偶数位姿)；② encoder 消融表；③ Waymo 训练 loss + Waymo SSE；④ 监督敏感性表。
 
 ## 1. 任务背景
 - 论文《GS-Net: Heterogeneous Vehicle Data Reuse via Generalizable Plug-and-Play 3DGS Module》**代码丢失，需按论文重建**。仓库初始是官方 3DGS（Inria）。
