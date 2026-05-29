@@ -12,7 +12,10 @@ import torch.nn.functional as F
 from .model import quat_to_rot
 
 
-def gsnet_loss(pred, gt, cfg=None):
+DEFAULT_WEIGHTS = {"pos": 1.0, "rot": 1.0, "scale": 1.0, "rgb": 1.0, "opacity": 1.0}
+
+
+def gsnet_loss(pred, gt, cfg=None, weights=None):
     """Compute the GS-Net loss.
 
     Args:
@@ -26,9 +29,16 @@ def gsnet_loss(pred, gt, cfg=None):
             - "center_xyz": (B, 3) input position, to form delta mu^gt
             - "center_rgb": (B, 3) input color, to form delta C^gt
         cfg: optional GSNetConfig controlling which terms are active.
+        weights: optional per-term weights (keys: pos/rot/scale/rgb/opacity).
+            Defaults to all 1.0 (paper-faithful equal weighting). Useful to
+            rebalance terms whose targets differ in magnitude after the
+            per-sequence coordinate normalization.
     Returns:
         (total_loss, dict of scalar sub-losses) — already averaged over B and T.
     """
+    w = dict(DEFAULT_WEIGHTS)
+    if weights:
+        w.update(weights)
     predict_color = getattr(cfg, "predict_color", True) if cfg else True
     predict_opacity = getattr(cfg, "predict_opacity", True) if cfg else True
     predict_scale_rot = getattr(cfg, "predict_scale_rot", True) if cfg else True
@@ -41,7 +51,7 @@ def gsnet_loss(pred, gt, cfg=None):
     delta_mu_gt = gt["mu"] - center_xyz                       # (B, T, 3)
     loss_mu = ((pred["delta_mu"] - delta_mu_gt) ** 2).sum(-1)  # (B, T)
 
-    loss_geom = loss_mu
+    loss_geom = w["pos"] * loss_mu
     loss_rot = torch.zeros_like(loss_mu)
     loss_scale = torch.zeros_like(loss_mu)
     if predict_scale_rot:
@@ -52,7 +62,7 @@ def gsnet_loss(pred, gt, cfg=None):
         loss_rot = ((pred["rot"] - gt_rot) ** 2).sum(dim=(-2, -1))  # (B, T)
         # ||S_hat - S^gt||_F^2 (diagonal -> sum of squared diagonal diffs)
         loss_scale = ((pred["scale"] - gt["scale"]) ** 2).sum(-1)  # (B, T)
-        loss_geom = loss_geom + loss_rot + loss_scale
+        loss_geom = loss_geom + w["rot"] * loss_rot + w["scale"] * loss_scale
 
     # ---- Appearance loss (Eq. 6) ----
     loss_app = torch.zeros_like(loss_mu)
@@ -61,12 +71,12 @@ def gsnet_loss(pred, gt, cfg=None):
     if predict_color:
         delta_rgb_gt = gt["rgb"] - center_rgb                 # (B, T, 3)
         loss_rgb = ((pred["delta_rgb"] - delta_rgb_gt) ** 2).sum(-1)
-        loss_app = loss_app + loss_rgb
+        loss_app = loss_app + w["rgb"] * loss_rgb
     if predict_opacity:
         # (max(alpha_hat, 0) - alpha^gt)^2
         alpha = pred["opacity"].clamp_min(0.0)
         loss_opacity = ((alpha - gt["opacity"]) ** 2).sum(-1)
-        loss_app = loss_app + loss_opacity
+        loss_app = loss_app + w["opacity"] * loss_opacity
 
     per_primitive = loss_geom + loss_app                      # (B, T)
     total = per_primitive.mean()                              # avg over N and T

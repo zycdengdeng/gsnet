@@ -64,6 +64,15 @@ def build_for_sequence(sparse_path, gdense_path, out_path, K=5, M=3,
     _, k_idx = dtree.query(n_cxyz, k=K)
     k_idx = k_idx.reshape(N, K)
 
+    # Clip normalized GT scales to the sigmoid-representable range (0, 1). A few
+    # very large Gaussians (ground/sky planes) may exceed it after normalization.
+    gt_scale = n_gscale[k_idx]
+    frac_clip = float((gt_scale > 0.999).mean())
+    if frac_clip > 0.01:
+        print(f"[warn] {os.path.basename(out_path)}: {frac_clip*100:.1f}% of GT "
+              f"scales > 1 after normalization (clipped to 0.999)")
+    gt_scale = np.clip(gt_scale, 1e-6, 0.999)
+
     out = dict(
         center_xyz=n_cxyz.astype(np.float32),
         center_rgb=crgb.astype(np.float32),
@@ -71,7 +80,7 @@ def build_for_sequence(sparse_path, gdense_path, out_path, K=5, M=3,
         neighbor_rgb=crgb[nn_idx].astype(np.float32),
         gt_mu=n_gmu[k_idx].astype(np.float32),
         gt_rgb=g["rgb"][k_idx].astype(np.float32),
-        gt_scale=n_gscale[k_idx].astype(np.float32),
+        gt_scale=gt_scale.astype(np.float32),
         gt_quat=g["quat"][k_idx].astype(np.float32),
         gt_opacity=g["opacity"][k_idx].astype(np.float32),
         norm_center=center.astype(np.float32),

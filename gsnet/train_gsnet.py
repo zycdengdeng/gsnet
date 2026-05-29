@@ -52,7 +52,7 @@ def train(args):
                 "mu": b["gt_mu"], "rgb": b["gt_rgb"], "scale": b["gt_scale"],
                 "quat": b["gt_quat"], "opacity": b["gt_opacity"],
             }
-            loss, logs = gsnet_loss(pred, gt, cfg)
+            loss, logs = gsnet_loss(pred, gt, cfg, weights=args.weights)
             opt.zero_grad(set_to_none=True)
             loss.backward()
             opt.step()
@@ -94,7 +94,16 @@ def main():
     ap.add_argument("--num_workers", type=int, default=4)
     ap.add_argument("--log_every", type=int, default=1)
     ap.add_argument("--save_every", type=int, default=50)
-    train(ap.parse_args())
+    # Per-term loss weights (default 1.0 each = paper-faithful equal weighting).
+    ap.add_argument("--w_pos", type=float, default=1.0)
+    ap.add_argument("--w_rot", type=float, default=1.0)
+    ap.add_argument("--w_scale", type=float, default=1.0)
+    ap.add_argument("--w_rgb", type=float, default=1.0)
+    ap.add_argument("--w_opacity", type=float, default=1.0)
+    args = ap.parse_args()
+    args.weights = {"pos": args.w_pos, "rot": args.w_rot, "scale": args.w_scale,
+                    "rgb": args.w_rgb, "opacity": args.w_opacity}
+    train(args)
 
 
 if __name__ == "__main__":
