@@ -118,7 +118,7 @@ python -m gsnet.waymo_sse --root ... --test_scenes <seg_10275...> <seg_15868...>
 - encoder 消融出表后：用其 `concat`(Ours) ckpt 跑 `run_sse --skip_baseline` 合并出 CARLA 主表（基线 vs GS-Net）。
 - Waymo：① 全 10 场景 G_dense → ② 8 训练建对应 → ③ 训 Waymo GS-Net → ④ 2 测试 SSE。
 - Waymo **CSE**（外推/差值视角可视化）——外推角度待与用户讨论后再做（需新驱动）。
-- CARLA **CSE**（数据组织待用户提供后再做）。
+- CARLA **CSE**：🔄 位姿推算已完成（`cse_poses.py`，自校验残差 rot 0.26–0.86°、center 0.22–0.67%，仅 SfM 噪声量级）；`make_cse_scene.py`(拼 60 奇训练+60 偶测试 COLMAP 模型) 与 `run_cse.py`(基线 vs GS-Net+3DGS) 已实现，待跑。CSE 数据：偶数图像在 `/mnt/zihanw/carla/paired_120/<id>_dense/cam{02..12}/`；rig=`gsnet/carla_rig.json`(半径0.75十二边形)。流程：`cse_poses`→`make_cse_scene`→`run_cse`(--ids 110 210 310 410 510)。
 - 用真实数字补全 rebuttal 文本（encoder 消融段、Waymo 段）。
 
 ## 7. 关键发现 / 注意事项
