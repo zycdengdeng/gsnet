@@ -84,7 +84,14 @@ class Scene:
             print("Initializing Gaussians from GS-Net prediction:", args.gsnet_init)
             self.gaussians.create_from_ply(args.gsnet_init, scene_info.train_cameras, self.cameras_extent)
         else:
-            self.gaussians.create_from_pcd(scene_info.point_cloud, scene_info.train_cameras, self.cameras_extent)
+            pcd = scene_info.point_cloud
+            if getattr(args, "init_pcd", ""):
+                # Initialize from a custom point cloud (e.g. MVS fused.ply) instead
+                # of the sparse SfM points -- used to generate dense G_dense targets.
+                from scene.dataset_readers import fetchPly
+                print("Initializing Gaussians from custom point cloud:", args.init_pcd)
+                pcd = fetchPly(args.init_pcd)
+            self.gaussians.create_from_pcd(pcd, scene_info.train_cameras, self.cameras_extent)
 
     def save(self, iteration):
         point_cloud_path = os.path.join(self.model_path, "point_cloud/iteration_{}".format(iteration))

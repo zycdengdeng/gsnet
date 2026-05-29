@@ -59,6 +59,9 @@ class ModelParams(ParamGroup):
         # Path to a GS-Net predicted .ply used as initialization instead of the
         # heuristic SfM point-cloud init (create_from_pcd). Empty = standard 3DGS.
         self.gsnet_init = ""
+        # Path to a custom point cloud (.ply) to initialize from via create_from_pcd
+        # (e.g. an MVS fused.ply) instead of the scene's sparse SfM points.
+        self.init_pcd = ""
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):

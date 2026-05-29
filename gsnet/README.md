@@ -101,6 +101,30 @@ main GS-Net SSE runs.
 > before it (old `point_encoder`/`context_encoder` keys) are not loadable by the
 > new code — retrain via the ablation (fast).
 
+## Waymo real-data experiment (reviewer-requested)
+
+Real-data validation on 10 Waymo scenes (front 3 cameras × 20 frames = 60 imgs).
+Per-scene COLMAP layout: `<scene>/colmap/dense/` with `fused.ply` (MVS),
+`images/cam{0,1,2}/`, and `sparse/0/`.
+
+```bash
+# (i) Generate G_dense for all scenes: 3DGS init from MVS fused.ply, full data
+python -m gsnet.waymo_gdense \
+    --root /mnt/zihanw/EmerNeRF/data/waymo/colmap_input \
+    --out_dir runs/waymo_gdense --gpus 2 3 4 5 6 7
+
+# (ii) Diagnostic on one training scene: sfm_3dgs vs mvs_3dgs (with 4/cam holdout)
+python -m gsnet.waymo_diag \
+    --root /mnt/zihanw/EmerNeRF/data/waymo/colmap_input \
+    --scene segment-3425716115468765803_977_756_997_756_with_camera_labels \
+    --out_dir runs/waymo_diag --gpus 2 3
+```
+
+`--init_pcd <ply>` (new ModelParams flag) makes `train.py` initialize from an
+arbitrary point cloud (e.g. MVS `fused.ply`) instead of the sparse SfM points.
+`make_cam_split.py` writes the per-camera test split by reading the real image
+names from `images.bin` (robust to `cam0/000.jpg`-style names).
+
 ## Design notes
 
 - **Sparse source.** GS-Net always consumes the *sparse* SfM (`*_sparse.ply`),
