@@ -1,0 +1,160 @@
+#
+# Waymo Same-Sensor Evaluation (SSE): on each test scene, hold out 4 frames per
+# camera and compare baseline 3DGS (sparse-SfM init) vs GS-Net+3DGS. Jobs are
+# distributed across --gpus; results merge/resume into sse_results.json.
+#
+# Usage:
+#   python -m gsnet.waymo_sse \
+#       --root /mnt/zihanw/EmerNeRF/data/waymo/colmap_input \
+#       --test_scenes <segA> <segB> \
+#       --ckpt runs/waymo_gsnet/gsnet_latest.pt \
+#       --out_dir runs/waymo_sse --gpus 1 7
+#
+
+import argparse
+import concurrent.futures as cf
+import json
+import os
+import queue
+import subprocess
+import sys
+import threading
+import time
+
+from gsnet.waymo import resolve_scene, seg_name, dense_dir, sparse_points
+from gsnet.make_cam_split import write_cam_split
+
+PY = sys.executable
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def run(cmd, gpu):
+    env = os.environ.copy()
+    env["CUDA_VISIBLE_DEVICES"] = str(gpu)
+    print(f"\n[gpu{gpu}] $ " + " ".join(str(c) for c in cmd), flush=True)
+    t0 = time.time()
+    subprocess.run([str(c) for c in cmd], check=True, cwd=REPO, env=env)
+    return time.time() - t0
+
+
+def read_results(mp):
+    with open(os.path.join(mp, "results.json")) as f:
+        d = json.load(f)
+    m = sorted(d.keys())[-1]
+    return {k: d[m][k] for k in ("PSNR", "SSIM", "LPIPS")}
+
+
+def optimize_eval(source, mp, iterations, extra, gpu):
+    it = str(iterations)
+    s = run([PY, "train.py", "-s", source, "-m", mp, "--eval",
+             "--iterations", it, "--test_iterations", it, "--save_iterations", it,
+             "--disable_viewer", "--quiet", *extra], gpu)
+    run([PY, "render.py", "-m", mp, "--skip_train", "--quiet"], gpu)
+    run([PY, "metrics.py", "-m", mp], gpu)
+    return read_results(mp), s
+
+
+def summarize(records, out_dir):
+    def avg(cfg, k):
+        v = [r[cfg][k] for r in records if cfg in r]
+        return sum(v) / len(v) if v else float("nan")
+    summary = {"per_scene": records, "averages": {}}
+    for cfg in ("baseline", "gsnet"):
+        if any(cfg in r for r in records):
+            summary["averages"][cfg] = {k: avg(cfg, k) for k in
+                                        ("PSNR", "SSIM", "LPIPS", "optim_seconds")}
+    os.makedirs(out_dir, exist_ok=True)
+    with open(os.path.join(out_dir, "sse_results.json"), "w") as f:
+        json.dump(summary, f, indent=2)
+    lines = ["", "| Scene | Method | PSNR | SSIM | LPIPS | Optim(min) |",
+             "|-------|--------|------|------|-------|------------|"]
+    for r in records:
+        for cfg in ("baseline", "gsnet"):
+            if cfg in r:
+                m = r[cfg]
+                lines.append(f"| {r['scene'][:24]} | {cfg} | {m['PSNR']:.2f} | "
+                             f"{m['SSIM']:.3f} | {m['LPIPS']:.3f} | "
+                             f"{m['optim_seconds']/60:.1f} |")
+    for cfg in ("baseline", "gsnet"):
+        if cfg in summary["averages"]:
+            a = summary["averages"][cfg]
+            lines.append(f"| **Avg** | **{cfg}** | **{a['PSNR']:.2f}** | "
+                         f"**{a['SSIM']:.3f}** | **{a['LPIPS']:.3f}** | "
+                         f"{a['optim_seconds']/60:.1f} |")
+    table = "\n".join(lines)
+    with open(os.path.join(out_dir, "sse_results.md"), "w") as f:
+        f.write(table + "\n")
+    return table
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--root", required=True)
+    ap.add_argument("--test_scenes", nargs="+", required=True)
+    ap.add_argument("--ckpt", default="runs/waymo_gsnet/gsnet_latest.pt")
+    ap.add_argument("--out_dir", default="runs/waymo_sse")
+    ap.add_argument("--gpus", type=int, nargs="+", default=[1, 7])
+    ap.add_argument("--iterations", type=int, default=30000)
+    ap.add_argument("--n_holdout", type=int, default=4)
+    ap.add_argument("--skip_baseline", action="store_true")
+    ap.add_argument("--skip_gsnet", action="store_true")
+    args = ap.parse_args()
+
+    # Write the per-camera split up-front (shared by both configs).
+    scenes = [resolve_scene(args.root, s) for s in args.test_scenes]
+    for sc in scenes:
+        write_cam_split(dense_dir(sc), args.n_holdout)
+
+    jobs = []
+    for sc in scenes:
+        if not args.skip_baseline:
+            jobs.append((sc, "baseline"))
+        if not args.skip_gsnet:
+            jobs.append((sc, "gsnet"))
+
+    records = {}
+    rp = os.path.join(args.out_dir, "sse_results.json")
+    if os.path.exists(rp):
+        for r in json.load(open(rp)).get("per_scene", []):
+            records[r["scene"]] = r
+    lock = threading.Lock()
+    gpu_q = queue.Queue()
+    for g in args.gpus:
+        gpu_q.put(g)
+
+    def worker(scene, cfg):
+        gpu = gpu_q.get()
+        try:
+            name = seg_name(scene)
+            source = dense_dir(scene)
+            if cfg == "baseline":
+                mp = os.path.join(args.out_dir, name, "baseline")
+                metrics, s = optimize_eval(source, mp, args.iterations, [], gpu)
+                res = {**metrics, "optim_seconds": s, "total_seconds": s}
+            else:
+                mp = os.path.join(args.out_dir, name, "gsnet")
+                os.makedirs(mp, exist_ok=True)
+                init_ply = os.path.join(mp, "gsnet_init.ply")
+                infer_s = run([PY, "-m", "gsnet.infer", "--ckpt", args.ckpt,
+                               "--sparse", sparse_points(scene), "--out", init_ply], gpu)
+                metrics, s = optimize_eval(source, mp, args.iterations,
+                                           ["--gsnet_init", init_ply], gpu)
+                res = {**metrics, "infer_seconds": infer_s, "optim_seconds": s,
+                       "total_seconds": infer_s + s}
+            with lock:
+                records.setdefault(name, {"scene": name})[cfg] = res
+                table = summarize(list(records.values()), args.out_dir)
+            print(f"\n[done] {name}/{cfg} on gpu{gpu} :: PSNR={res['PSNR']:.2f}\n{table}",
+                  flush=True)
+        finally:
+            gpu_q.put(gpu)
+
+    with cf.ThreadPoolExecutor(max_workers=len(args.gpus)) as ex:
+        for f in cf.as_completed([ex.submit(worker, sc, cfg) for sc, cfg in jobs]):
+            f.result()
+    print("\n" + summarize(list(records.values()), args.out_dir))
+    print(f"\nResults -> {args.out_dir}/sse_results.{{json,md}}")
+
+
+if __name__ == "__main__":
+    main()

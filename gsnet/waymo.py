@@ -32,6 +32,17 @@ def fused_ply(scene_path):
     return os.path.join(dense_dir(scene_path), "fused.ply")
 
 
+def sparse_points(scene_path):
+    """Sparse SfM points (the GS-Net input) for a Waymo scene."""
+    return os.path.join(dense_dir(scene_path), "sparse", "0", "points3D.bin")
+
+
+def gdense_path(gdense_dir, scene_path, iterations=30000):
+    """Path to the generated G_dense for a scene (see waymo_gdense.py)."""
+    return os.path.join(gdense_dir, seg_name(scene_path), "point_cloud",
+                        f"iteration_{iterations}", "point_cloud.ply")
+
+
 def resolve_scene(root, name_or_path):
     """Accept either a full path or a segment name under root."""
     if os.path.isdir(name_or_path):
