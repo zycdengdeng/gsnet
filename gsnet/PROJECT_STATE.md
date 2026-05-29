@@ -12,6 +12,15 @@
 - 用户机器：8× A100-80GB（卡 0–7，常有其他人占用部分卡，按 `nvidia-smi` 安排）。
 - 时间/实验结果一定要记录（用户强调多次）：每个脚本都写 `*_times.json` / `*_results.{json,md}`。
 
+## 0.5 运行中的实验 / tmux 位置（用户维护，尽力同步）
+| tmux | 内容 | 状态 |
+|---|---|---|
+| zyc1 | 最初的 concat 训练（旧代码，已被 encoder 消融取代）| 已弃用/可 kill |
+| zyc3 | 先后跑过 CARLA 基线 SSE、Waymo 诊断 | 已完成 |
+| zyc4 | CSE 110 基线自检（`run_cse --ids 110 --skip_gsnet`）| 进行中 |
+| (未知名) | encoder 消融 `run_encoder_ablation`（GPU 3-6）| 进行中 |
+> 备注：GPU 占用以 `nvidia-smi` 为准；CSE/Waymo 等重活按当时空闲卡填 `--gpus`。
+
 ## 1. 任务背景
 - 论文《GS-Net: Heterogeneous Vehicle Data Reuse via Generalizable Plug-and-Play 3DGS Module》**代码丢失，需按论文重建**。仓库初始是官方 3DGS（Inria）。
 - 论文两大贡献：① CARLA-NVS 数据集（12 相机，跨传感器视图合成 benchmark）；② **GS-Net**：从稀疏 SfM 点云一次前向预测稠密高斯，作为 3DGS 的即插即用初始化。

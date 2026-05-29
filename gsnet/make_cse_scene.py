@@ -37,6 +37,12 @@ def build_scene(sid, io_dir, paired_dir, poses_dir, out_dir):
     extr = read_extrinsics_binary(os.path.join(odd_model, "images.bin"))
     intr = read_intrinsics_binary(os.path.join(odd_model, "cameras.bin"))
     cam = list(intr.values())[0]   # all 12 cameras share intrinsics
+    # The repo's text intrinsics reader only accepts PINHOLE -> normalize to it.
+    p = list(cam.params)
+    if cam.model == "PINHOLE":
+        fx, fy, cx, cy = p[0], p[1], p[2], p[3]
+    else:  # SIMPLE_PINHOLE / SIMPLE_RADIAL / RADIAL: [f, cx, cy, ...]
+        fx, fy, cx, cy = p[0], p[0], p[1], p[2]
 
     out = os.path.join(out_dir, sid)
     img_dir = os.path.join(out, "images")
@@ -47,8 +53,7 @@ def build_scene(sid, io_dir, paired_dir, poses_dir, out_dir):
     # cameras.txt (single shared intrinsic, camera id 1)
     with open(os.path.join(sp_dir, "cameras.txt"), "w") as f:
         f.write("# Camera list\n")
-        f.write(f"1 {cam.model} {cam.width} {cam.height} "
-                + " ".join(str(p) for p in cam.params) + "\n")
+        f.write(f"1 PINHOLE {cam.width} {cam.height} {fx} {fy} {cx} {cy}\n")
 
     lines = ["# Image list"]
     iid = 0
