@@ -119,6 +119,9 @@ python -m gsnet.waymo_sse --root ... --test_scenes <seg_10275...> <seg_15868...>
 - CARLA 建对应：43 序列 → `CORR/train`（scale 56–181，无 scale-clip 警告，对齐良好）。
 - CARLA 基线 SSE：用户已跑完（`runs/sse` 基线行）。
 - Waymo 诊断：sfm_3dgs **28.18** / mvs_3dgs **29.33**（+1.15dB），证明 60 张/2s 够用、MVS 增益明显。
+- **CARLA 基线 SSE 已跑完**（`runs/sse/sse_results.md`）：110=26.08, 210=24.53, 310=26.60, 410=22.59, 510=23.53，**Avg 24.67**（SSIM 0.919, LPIPS 0.168）。待合并 Ours。
+- **Waymo G_dense 已生成**（全 10 场景，`runs/waymo_gdense/`，zyc3 跑完）。
+- **CARLA CSE 位姿已推算**（`runs/cse_poses/`，自校验 rot<0.86°/center<0.67%）；CSE 场景已构建（`runs/cse_scenes/`）；110 CSE 基线自检进行中（zyc4）。
 
 ### 🔄 进行中
 - **encoder 消融**（`run_encoder_ablation`）在跑（GPU 3-6 是它）。训 5 变体→全量 SSE→出表。
