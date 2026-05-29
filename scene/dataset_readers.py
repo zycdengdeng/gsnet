@@ -177,16 +177,23 @@ def readColmapSceneInfo(path, images, depths, eval, train_test_exp, llffhold=8):
             sys.exit(1)
 
     if eval:
-        if "360" in path:
-            llffhold = 8
-        if llffhold:
-            print("------------LLFF HOLD-------------")
-            cam_names = [cam_extrinsics[cam_id].name for cam_id in cam_extrinsics]
-            cam_names = sorted(cam_names)
-            test_cam_names_list = [name for idx, name in enumerate(cam_names) if idx % llffhold == 0]
+        # Prefer an explicit test.txt (e.g. the GS-Net SSE split) when present,
+        # otherwise fall back to the default LLFF hold-out.
+        test_txt = os.path.join(path, "sparse/0", "test.txt")
+        if os.path.exists(test_txt):
+            print("------------TEST.TXT SPLIT-------------")
+            with open(test_txt, 'r') as file:
+                test_cam_names_list = [line.strip() for line in file if line.strip()]
         else:
-            with open(os.path.join(path, "sparse/0", "test.txt"), 'r') as file:
-                test_cam_names_list = [line.strip() for line in file]
+            if "360" in path:
+                llffhold = 8
+            if llffhold:
+                print("------------LLFF HOLD-------------")
+                cam_names = [cam_extrinsics[cam_id].name for cam_id in cam_extrinsics]
+                cam_names = sorted(cam_names)
+                test_cam_names_list = [name for idx, name in enumerate(cam_names) if idx % llffhold == 0]
+            else:
+                test_cam_names_list = []
     else:
         test_cam_names_list = []
 

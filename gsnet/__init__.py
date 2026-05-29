@@ -6,8 +6,7 @@
 # forward pass, providing a transferable geometric prior for 3DGS
 # initialization across scenes.
 #
-
-from .model import GSNet, GSNetConfig, quat_to_rot
-from .losses import gsnet_loss
-
-__all__ = ["GSNet", "GSNetConfig", "quat_to_rot", "gsnet_loss"]
+# Submodules are imported directly (e.g. `from gsnet.model import GSNet`) so that
+# torch-free utilities (make_sse_split, inspect_ply, build_correspondences) do
+# not pull in heavy dependencies.
+#

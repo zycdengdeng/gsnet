@@ -1,27 +1,29 @@
 #
-# GS-Net inference (single forward pass): densify a scene's sparse SfM point
-# cloud into Gaussian primitives and export a standard 3DGS .ply that the
-# existing pipeline consumes via --gsnet_init (see train.py).
+# GS-Net inference (single forward pass): densify a sequence's sparse SfM point
+# cloud into Gaussian primitives and export a standard 3DGS .ply consumed by the
+# pipeline via --gsnet_init (see train.py / scene/__init__.py).
+#
+# Operates in the same per-sequence normalized frame as training, then inverts
+# the normalization so the exported Gaussians live in the original COLMAP frame
+# (matching the cameras for subsequent 3DGS optimization).
 #
 # Usage:
-#   python -m gsnet.infer \
-#       --ckpt runs/gsnet/gsnet_latest.pt \
-#       --sfm  SCENE/seq/sparse/0/points3D.bin \
-#       --out  SCENE/seq/gsnet_init.ply
+#   python -m gsnet.infer --ckpt runs/gsnet/gsnet_latest.pt \
+#       --sparse sparse_point/S01/110_sparse.ply \
+#       --out    input_output/110_base/gsnet_init.ply
 #
 
 import argparse
 import os
-import sys
+import time
 
 import numpy as np
 import torch
 from scipy.spatial import cKDTree
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from gsnet.model import GSNet, GSNetConfig
 from gsnet.io import save_gaussians_ply
-from gsnet.build_correspondences import read_sparse_points
+from gsnet.common import read_points_any, compute_normalization
 
 
 def build_neighbor_graph(xyz, M):
@@ -35,17 +37,24 @@ def build_neighbor_graph(xyz, M):
 
 @torch.no_grad()
 def run(args):
+    t0 = time.time()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     ckpt = torch.load(args.ckpt, map_location=device)
     cfg = GSNetConfig(**ckpt["cfg"])
     net = GSNet(cfg).to(device).eval()
     net.load_state_dict(ckpt["model"])
 
-    cxyz, crgb = read_sparse_points(args.sfm)
-    nn_idx = build_neighbor_graph(cxyz, cfg.M)
-    cxyz_t = torch.from_numpy(cxyz).float()
+    cxyz, crgb = read_points_any(args.sparse)
+    if args.no_normalize:
+        center, scale = np.zeros(3, np.float32), 1.0
+    else:
+        center, scale = compute_normalization(cxyz)
+    n_cxyz = (cxyz - center) / scale
+
+    nn_idx = build_neighbor_graph(n_cxyz, cfg.M)
+    cxyz_t = torch.from_numpy(n_cxyz).float()
     crgb_t = torch.from_numpy(crgb).float()
-    nxyz_t = torch.from_numpy(cxyz[nn_idx]).float()
+    nxyz_t = torch.from_numpy(n_cxyz[nn_idx]).float()
     nrgb_t = torch.from_numpy(crgb[nn_idx]).float()
 
     mus, rgbs, scales, quats, ops = [], [], [], [], []
@@ -54,9 +63,12 @@ def run(args):
         e = min(s + args.chunk, N)
         pred = net(cxyz_t[s:e].to(device), crgb_t[s:e].to(device),
                    nxyz_t[s:e].to(device), nrgb_t[s:e].to(device))
-        mus.append(pred["mu"].reshape(-1, 3).cpu().numpy())
+        # Denormalize geometry back to the original COLMAP frame.
+        mu = pred["mu"].reshape(-1, 3).cpu().numpy() * scale + center
+        sc = pred["scale"].reshape(-1, 3).cpu().numpy() * scale
+        mus.append(mu)
+        scales.append(sc)
         rgbs.append(pred["rgb"].reshape(-1, 3).cpu().numpy())
-        scales.append(pred["scale"].reshape(-1, 3).cpu().numpy())
         quats.append(pred["quat"].reshape(-1, 4).cpu().numpy())
         ops.append(pred["opacity"].reshape(-1).cpu().numpy())
 
@@ -66,16 +78,19 @@ def run(args):
         np.concatenate(quats), np.concatenate(ops),
         opacity_thresh=args.opacity_thresh,
     )
-    print(f"[infer] {N} sparse pts -> {P} Gaussians (T={cfg.T}) written to {args.out}")
+    dt = time.time() - t0
+    print(f"[infer] {N} sparse pts -> {P} Gaussians (T={cfg.T}) in {dt:.1f}s -> {args.out}")
+    return dt
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", required=True)
-    ap.add_argument("--sfm", required=True, help="COLMAP points3D.bin/.txt")
+    ap.add_argument("--sparse", required=True, help="sparse SfM .ply/.bin/.txt")
     ap.add_argument("--out", required=True, help="output init .ply")
     ap.add_argument("--chunk", type=int, default=200000)
     ap.add_argument("--opacity_thresh", type=float, default=0.0)
+    ap.add_argument("--no_normalize", action="store_true")
     run(ap.parse_args())
 
 

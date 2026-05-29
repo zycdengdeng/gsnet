@@ -7,8 +7,10 @@
 #
 
 import argparse
+import json
 import os
 import sys
+import time
 
 import torch
 from torch.utils.data import DataLoader
@@ -36,7 +38,10 @@ def train(args):
 
     os.makedirs(args.out_dir, exist_ok=True)
     net.train()
+    t_start = time.time()
+    epoch_times = []
     for epoch in range(args.epochs):
+        t_ep = time.time()
         running = 0.0
         for batch in dl:
             b = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
@@ -53,8 +58,10 @@ def train(args):
             opt.step()
             running += float(loss)
         avg = running / max(1, len(dl))
+        dt_ep = time.time() - t_ep
+        epoch_times.append(dt_ep)
         if (epoch + 1) % args.log_every == 0 or epoch == 0:
-            print(f"epoch {epoch+1:3d}/{args.epochs}  loss={avg:.5f}  "
+            print(f"epoch {epoch+1:3d}/{args.epochs}  loss={avg:.5f}  {dt_ep:.1f}s  "
                   + "  ".join(f"{k}={float(v):.4f}" for k, v in logs.items()
                               if k != "loss"))
         if (epoch + 1) % args.save_every == 0 or epoch + 1 == args.epochs:
@@ -62,7 +69,14 @@ def train(args):
             torch.save({"model": net.state_dict(), "cfg": vars(cfg)}, ckpt)
             torch.save({"model": net.state_dict(), "cfg": vars(cfg)},
                        os.path.join(args.out_dir, "gsnet_latest.pt"))
-    print("Training done.")
+    total = time.time() - t_start
+    with open(os.path.join(args.out_dir, "train_times.json"), "w") as f:
+        json.dump({"total_seconds": total, "epochs": args.epochs,
+                   "num_points": ds.n, "batch_size": args.batch_size,
+                   "avg_epoch_seconds": sum(epoch_times) / max(1, len(epoch_times))},
+                  f, indent=2)
+    print(f"Training done in {total:.1f}s "
+          f"(avg {sum(epoch_times)/max(1,len(epoch_times)):.1f}s/epoch).")
 
 
 def main():

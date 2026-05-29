@@ -1,69 +1,87 @@
 # GS-Net
 
-Reimplementation of **GS-Net** (from the paper *"GS-Net: Heterogeneous Vehicle
-Data Reuse via Generalizable Plug-and-Play 3DGS Module"*): a lightweight,
-plug-and-play module that predicts **dense Gaussian primitives directly from
-sparse SfM point clouds** in a single forward pass, used as initialization for
-standard 3DGS optimization.
+Reimplementation of **GS-Net** (*"GS-Net: Heterogeneous Vehicle Data Reuse via
+Generalizable Plug-and-Play 3DGS Module"*): a lightweight, plug-and-play module
+that predicts **dense Gaussian primitives directly from sparse SfM point clouds**
+in a single forward pass, used as initialization for standard 3DGS optimization.
 
-This package lives alongside the original 3D Gaussian Splatting repo and is
-fully decoupled from it: GS-Net produces a standard 3DGS `.ply`, which the
-training pipeline consumes via the new `--gsnet_init` flag.
+Fully decoupled from the base 3DGS repo: GS-Net produces a standard 3DGS `.ply`,
+consumed via the new `--gsnet_init` flag.
 
 ## Components
 
 | File | Role |
 |------|------|
 | `model.py` | GS-Net network: geometry-aware encoder (Eq. 3) + multi-head Gaussian expansion (Eq. 4). |
-| `losses.py` | Decoupled geometric + appearance training objective (Eq. 5–7). |
-| `build_correspondences.py` | Offline data engine step **we own**: KD-tree sparse→dense K-NN, plus M-NN sparse graph → pseudo-GT `.npz`. |
-| `dataset.py` | Concatenates all correspondence `.npz` across scenes for cross-scene training. |
-| `train_gsnet.py` | Training loop: 200 epochs, batch 512, Adam lr 1e-3, T=5, M=3. |
+| `losses.py` | Decoupled geometric + appearance objective (Eq. 5–7). |
+| `common.py` | Shared readers, G_dense outlier filtering, per-sequence normalization. |
+| `build_correspondences.py` | KD-tree sparse→dense K-NN (pseudo-GT) + M-NN sparse graph → `.npz`. |
+| `dataset.py` / `train_gsnet.py` | Cross-scene dataset and training loop. |
 | `infer.py` | Single forward pass: sparse SfM → dense Gaussian init `.ply`. |
-| `io.py` | Writes predictions as a standard 3DGS `.ply` (consumed by `GaussianModel.load_ply`). |
+| `io.py` | Export predictions as a standard 3DGS `.ply`. |
+| `make_sse_split.py` | Write the SSE train/test split as `sparse/0/test.txt`. |
+| `run_sse.py` | SSE driver: baseline 3DGS vs GS-Net+3DGS, with metrics + timing. |
+| `inspect_ply.py` | Diagnostic for ply fields / coordinate scale / alignment. |
 
-## End-to-end workflow
+## Dataset layout (CARLA-NVS, 5 scenes × 10 sequences)
 
-The offline data engine up to `G_dense` (COLMAP SfM, MVS, per-scene 3DGS
-optimization) is produced on the server side. We consume `G_dense` + sparse SfM.
+```
+sparse_point/S0<scene>/<id>_sparse.ply                 # sparse SfM  (P_sfm, GS-Net input)
+input_output/<id>_dense/sparse/0/points3D.ply          # dense MVS   (3DGS input for targets)
+input_output/output_<id>_dense/point_cloud/iteration_30000/point_cloud.ply   # G_dense target
+input_output/<id>_base/{images,sparse/0}               # test sequence COLMAP workspace
+```
+`id = 100*scene + seq`. Train seqs: `seq 1–9`. Test seqs: `seq 10` → `110,210,310,410,510`.
+Images 1–60 per sequence map to source cameras `1,3,5,7,9,11` (10 frames each).
+
+## Workflow
 
 ```bash
-# 1. Build pseudo-GT correspondences for every TRAINING sequence
-python -m gsnet.build_correspondences \
-    --sfm    SCENE/seq/sparse/0/points3D.bin \
-    --gdense SCENE/seq/gaussians/point_cloud.ply \
-    --out    CORR/train/<scene>_<seq>.npz --K 5 --M 3
+# 0. (optional) inspect a ply's fields / scale / sparse-vs-dense alignment
+python -m gsnet.inspect_ply --ply sparse_point/S01/101_sparse.ply \
+    --gdense input_output/output_101_dense/point_cloud/iteration_30000/point_cloud.ply
 
-# 2. Train GS-Net across all 15 training scenes
+# 1. Build pseudo-GT correspondences for all training sequences
+python -m gsnet.build_correspondences --batch \
+    --io_dir /mnt/zihanw/carla/input_output \
+    --sparse_root /mnt/zihanw/carla/sparse_point \
+    --out_dir CORR/train          # -> CORR/train/*.npz + build_times.json
+
+# 2. Train GS-Net (200 epochs, batch 512, Adam 1e-3; logs train_times.json)
 python -m gsnet.train_gsnet --corr_dir CORR/train --out_dir runs/gsnet
 
-# 3. Inference: densify a (test) scene's sparse SfM into an init .ply
-python -m gsnet.infer \
+# 3+4. SSE evaluation: baseline 3DGS vs GS-Net+3DGS on the 5 test sequences
+python -m gsnet.run_sse \
+    --io_dir /mnt/zihanw/carla/input_output \
+    --sparse_root /mnt/zihanw/carla/sparse_point \
     --ckpt runs/gsnet/gsnet_latest.pt \
-    --sfm  SCENE/seq/sparse/0/points3D.bin \
-    --out  SCENE/seq/gsnet_init.ply
-
-# 4. Standard 3DGS optimization, initialized from GS-Net (plug-and-play)
-python train.py -s SCENE/seq --gsnet_init SCENE/seq/gsnet_init.ply --eval
+    --out_dir runs/sse            # -> runs/sse/sse_results.{json,md}
 ```
 
-## Conventions / design notes (please confirm)
+`run_sse.py` records GS-Net inference time + 3DGS optimization time + PSNR/SSIM/
+LPIPS per sequence and the averages, mirroring the paper's SSE table and
+efficiency comparison.
 
-- **Color ↔ SH.** SfM colors and `G_dense` diffuse colors are handled in RGB
-  space `[0,1]`. `G_dense` `f_dc` is converted via `SH2RGB`; on export the
-  predicted color is converted back via `RGB2SH`. Only the 0-order SH (diffuse)
-  is predicted; higher-order SH are left to per-scene optimization (paper).
-- **Scale.** `S_hat = sigmoid(s_hat) ∈ (0,1)` per the paper. The GT scale is the
-  *actual* scale `exp(_scaling)` from `G_dense`. If scenes are metric and many
-  dense Gaussians have scale `> 1`, the sigmoid cap would clip them — in that
-  case we may need to rescale or relax the activation. Flagged for review.
-- **Position offset.** Bounded by `Tanh ∈ (-1,1)` (`pos_offset_scale=1.0`). This
-  assumes the K nearest dense Gaussians lie within ~1 unit of each SfM point. If
-  the COLMAP coordinate scale makes this too tight, raise `--pos_offset_scale`.
-- **Loss offsets.** The geometric/appearance losses compare the *applied*
-  (post-activation) offsets `Tanh(Δμ̂)` and `σ(ΔĈ)` against the GT offsets, so
-  that `μ̂ ≈ μ^gt` and `Ĉ ≈ C^gt` directly.
-- **Opacity.** `α̂ = Tanh(·) ∈ (-1,1)`; non-positive opacity primitives are
-  discarded on export.
+## Design notes
+
+- **Sparse source.** GS-Net always consumes the *sparse* SfM (`*_sparse.ply`),
+  never the dense MVS (`<id>_dense/.../points3D.ply`).
+- **Coordinate normalization.** Each sequence is normalized by a similarity
+  transform (median center + p95 radius) computed from its sparse points only —
+  reproducible at inference. Targets are normalized identically; predictions are
+  denormalized before export so 3DGS optimizes in the original COLMAP frame. This
+  unifies cross-sequence scale and keeps the Tanh offset / sigmoid scale bounds
+  meaningful.
+- **G_dense filtering.** Far floating junk (distance > `radius_margin`×p99 of the
+  sparse extent) and near-transparent Gaussians (`opacity < opacity_min`) are
+  removed before building correspondences. Optional statistical outlier removal
+  (`--sor_k`).
+- **Color ↔ SH.** Colors handled in RGB `[0,1]`; only 0-order SH (diffuse) is
+  predicted; `G_dense` `f_dc`→RGB via `SH2RGB`, exported back via `RGB2SH`.
+- **Loss offsets.** Geometric/appearance losses compare the *applied*
+  (post-activation) offsets `Tanh(Δμ̂)` / `σ(ΔĈ)` against GT offsets.
+- **Opacity.** `α̂ = Tanh(·) ∈ (-1,1)`; non-positive opacity primitives dropped on export.
 - **Ablations (Table IV).** `GSNetConfig` toggles `predict_color`,
-  `predict_opacity`, `predict_scale_rot` for the attribute ablation study.
+  `predict_opacity`, `predict_scale_rot`.
+- **Timing.** Every stage logs wall-clock time (`build_times.json`,
+  `train_times.json`, `sse_results.json`).
