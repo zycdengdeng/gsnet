@@ -158,7 +158,15 @@ def main():
         if not args.skip_gsnet:
             jobs.append((sid, "gsnet"))
 
+    # Resume/merge: load any previously computed results so a second invocation
+    # (e.g. baselines first, GS-Net later) accumulates instead of overwriting.
     records = {}        # sid -> {"id","scene", "baseline":..., "gsnet":...}
+    results_path = os.path.join(args.out_dir, "sse_results.json")
+    if os.path.exists(results_path):
+        with open(results_path) as f:
+            for r in json.load(f).get("per_sequence", []):
+                records[r["id"]] = r
+        print(f"[resume] loaded {len(records)} existing sequence records")
     lock = threading.Lock()
     gpu_q = queue.Queue()
     for g in args.gpus:
