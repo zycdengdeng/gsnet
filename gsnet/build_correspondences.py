@@ -37,11 +37,20 @@ from gsnet.common import (
 
 
 def build_for_sequence(sparse_path, gdense_path, out_path, K=5, M=3,
-                       normalize=True, **filt_kwargs):
+                       normalize=True, subsample=1.0, **filt_kwargs):
     t0 = time.time()
     cxyz, crgb = read_points_any(sparse_path)
     g = read_dense_gaussians(gdense_path)
     g = filter_dense(g, cxyz, **filt_kwargs)
+    # Optional random subsampling of G_dense (probes sensitivity to pseudo-GT
+    # density / MVS coverage; reproducible per output file).
+    if subsample < 1.0:
+        n0 = g["xyz"].shape[0]
+        rng = np.random.default_rng(abs(hash(os.path.basename(out_path))) % (2**32))
+        keep = rng.choice(n0, int(round(n0 * subsample)), replace=False)
+        g = {k: v[keep] for k, v in g.items()}
+        print(f"[subsample] {os.path.basename(out_path)}: {n0} -> {g['xyz'].shape[0]} "
+              f"({subsample:.2f})")
     N = cxyz.shape[0]
 
     # Per-sequence normalization (from sparse points only -> reproducible).
@@ -95,7 +104,7 @@ def build_for_sequence(sparse_path, gdense_path, out_path, K=5, M=3,
                 scale=float(scale), seconds=float(dt))
 
 
-def discover_training_sequences(io_dir, sparse_root):
+def discover_training_sequences(io_dir, sparse_root, iteration=30000):
     """Map each output_<id>_dense (training target) to its sparse SfM .ply."""
     seqs = []
     for p in sorted(glob.glob(os.path.join(io_dir, "output_*_dense"))):
@@ -103,7 +112,7 @@ def discover_training_sequences(io_dir, sparse_root):
         if not m:
             continue
         sid = m.group(1)
-        gdense = os.path.join(p, "point_cloud", "iteration_30000", "point_cloud.ply")
+        gdense = os.path.join(p, "point_cloud", f"iteration_{iteration}", "point_cloud.ply")
         scene = int(sid) // 100
         sparse = os.path.join(sparse_root, f"S{scene:02d}", f"{sid}_sparse.ply")
         if os.path.exists(gdense) and os.path.exists(sparse):
@@ -134,15 +143,20 @@ def main():
     ap.add_argument("--opacity_min", type=float, default=0.005)
     ap.add_argument("--sor_k", type=int, default=0, help="0 disables statistical outlier removal")
     ap.add_argument("--workers", type=int, default=1, help="parallel CPU workers (batch mode)")
+    ap.add_argument("--gdense_iter", type=int, default=30000,
+                    help="3DGS optimization iteration of G_dense to supervise from")
+    ap.add_argument("--gdense_subsample", type=float, default=1.0,
+                    help="fraction of G_dense to keep (pseudo-GT density sensitivity)")
     args = ap.parse_args()
 
     filt = dict(radius_margin=args.radius_margin, opacity_min=args.opacity_min,
                 sor_k=args.sor_k)
-    common = dict(K=args.K, M=args.M, normalize=not args.no_normalize, **filt)
+    common = dict(K=args.K, M=args.M, normalize=not args.no_normalize,
+                  subsample=args.gdense_subsample, **filt)
 
     if args.batch:
         assert args.io_dir and args.sparse_root and args.out_dir
-        seqs = discover_training_sequences(args.io_dir, args.sparse_root)
+        seqs = discover_training_sequences(args.io_dir, args.sparse_root, args.gdense_iter)
         print(f"[batch] {len(seqs)} training sequences, workers={args.workers}")
         t0 = time.time()
         tasks = [(sparse, gdense, os.path.join(args.out_dir, f"{sid}.npz"))
