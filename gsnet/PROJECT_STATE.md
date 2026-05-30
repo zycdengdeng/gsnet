@@ -140,6 +140,14 @@ python -m gsnet.waymo_sse --root ... --test_scenes <seg_10275...> <seg_15868...>
 - `inspect_ply`：CARLA 坐标 ~数百单位；稀疏↔G_dense 对齐好（NN p50≈0.19）；G_dense 有远处漂浮点（已过滤）；SH degree 3。
 - Waymo 是 metric 尺度，量级与 CARLA 不同；归一化/过滤自适应，应无碍——但**首次 Waymo 建对应要看 scale 与是否有 scale-clip 警告**。
 
+## 7.5 ⚠️ 重要发现：GS-Net 增益偏低 + 网络设计 R&D（2026-05-30）
+- **encoder 消融**（SSE，5 测试序列，30k）：(a)MLP-only 23.91 / (b)Concat=Ours 24.46 / (c)EdgeConv 23.95 / (d)Attention 23.79 / **(e)Explicit-Geometry 25.12（最好）**。基线=24.67。
+- **问题**：Ours(concat) 24.46 ≈ 基线 24.67（甚至略低！），最好的 (e) 也仅 +0.45，**远低于论文 +2.08**。我们这版重建未达论文效果。
+- **诊断**：① 旋转损失是不可学噪声地板、淹没梯度；② 位置项归一化后目标极小、梯度弱；③ 颜色 σ 只能变亮；④ 通用强 encoder(图/注意力)无效→表达力非瓶颈，几何先验才是。
+- **已实现改进**：`geoedge`(几何 EdgeConv=图聚合+相对坐标/距离)；`color_activation=tanh`(可变暗)；损失权重 `--w_rot/--w_pos/--w_scale`；`--in_memory`(训练提速~100x)。
+- **R&D 流程**：`run_design_sweep.py`(encoder×color×权重，7k/3序列快速排序)→选优→全5序列30k确认；`run_weight_sweep.py`(仅权重)。**用户 OK 改论文**，目标把 Ours 拉到明显超基线。
+- **待实现（下一轮若不够）**：集合级匹配损失（预测T↔GT K 的最近邻/匈牙利匹配，替代任意的 t-to-t 配对）。
+
 ## 8. 给审稿人的回应（草稿，待数字补全）
 - **Encoder 简单**：强调 GS-Net 是即插即用初始化模块、推理速度关键（50× 加速定位）；补 encoder 消融（a–e 五种），报告 PSNR/SSIM/LPIPS + 参数量 + 推理时间。预期结论：邻域聚合必要（a 最差）；更强 encoder（c/d/e）增益边际但参数/延迟上升 → 支撑轻量设计；残差由 per-scene 优化吸收。
 - **真实数据**：Waymo 10 场景，先 SSE 量化（基线 vs GS-Net+3DGS），后续 CSE 做外推可视化。
