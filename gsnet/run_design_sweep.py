@@ -22,8 +22,10 @@
 #
 
 import argparse
+import concurrent.futures as cf
 import json
 import os
+import queue
 import subprocess
 import sys
 
@@ -31,15 +33,15 @@ PY = sys.executable
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def run(cmd, gpu=None):
+def run(cmd, gpu):
     env = os.environ.copy()
-    if gpu is not None:
-        env["CUDA_VISIBLE_DEVICES"] = str(gpu)
-    print("\n$ " + " ".join(str(c) for c in cmd), flush=True)
+    env["CUDA_VISIBLE_DEVICES"] = str(gpu)
+    print(f"\n[gpu{gpu}] $ " + " ".join(str(c) for c in cmd), flush=True)
     subprocess.run([str(c) for c in cmd], check=True, cwd=REPO, env=env)
 
 
-def one(cfg, args):
+def one(cfg, args, gpu):
+    """Train + cheap SSE eval for one config, entirely on one GPU."""
     enc, color, wr, wp, ws = cfg.split(":")
     label = f"{enc}_{color}_wr{wr}_wp{wp}_ws{ws}"
     model = os.path.join(args.out_dir, "model", label)
@@ -48,12 +50,12 @@ def one(cfg, args):
         run([PY, "-m", "gsnet.train_gsnet", "--corr_dir", args.corr_dir,
              "--out_dir", model, "--encoder_type", enc, "--color_activation", color,
              "--epochs", str(args.epochs), "--in_memory", "1",
-             "--w_rot", wr, "--w_pos", wp, "--w_scale", ws], gpu=args.gpus[0])
+             "--w_rot", wr, "--w_pos", wp, "--w_scale", ws], gpu)
     run([PY, "-m", "gsnet.run_sse", "--io_dir", args.io_dir,
          "--sparse_root", args.sparse_root,
          "--ckpt", os.path.join(model, "gsnet_latest.pt"),
          "--out_dir", sse, "--skip_baseline", "--iterations", str(args.iterations),
-         "--test_ids", *args.eval_ids, "--gpus", *[str(g) for g in args.gpus]])
+         "--test_ids", *args.eval_ids, "--gpus", str(gpu)], gpu)
     g = json.load(open(os.path.join(sse, "sse_results.json")))["averages"]["gsnet"]
     return {"label": label, "config": cfg, **{k: g[k] for k in ("PSNR", "SSIM", "LPIPS")}}
 
@@ -74,12 +76,31 @@ def main():
         "geoedge:sigmoid:0.1:10:1", "geoedge:tanh:0.1:10:1", "geoedge:tanh:0.1:10:10"])
     args = ap.parse_args()
 
+    # Run configs in parallel, one per GPU (each config is fully self-contained
+    # on its GPU: fast in-memory training + reduced-iter SSE on the subset).
     rows = []
-    for cfg in args.configs:
-        rows.append(one(cfg, args))
-        rows.sort(key=lambda r: -r["PSNR"])
-        os.makedirs(args.out_dir, exist_ok=True)
-        json.dump(rows, open(os.path.join(args.out_dir, "design.json"), "w"), indent=2)
+    gpu_q = queue.Queue()
+    for g in args.gpus:
+        gpu_q.put(g)
+    import threading
+    lock = threading.Lock()
+    os.makedirs(args.out_dir, exist_ok=True)
+
+    def worker(cfg):
+        gpu = gpu_q.get()
+        try:
+            r = one(cfg, args, gpu)
+            with lock:
+                rows.append(r)
+                rows.sort(key=lambda x: -x["PSNR"])
+                json.dump(rows, open(os.path.join(args.out_dir, "design.json"), "w"), indent=2)
+            print(f"[done] {r['config']} -> PSNR={r['PSNR']:.2f}", flush=True)
+        finally:
+            gpu_q.put(gpu)
+
+    with cf.ThreadPoolExecutor(max_workers=len(args.gpus)) as ex:
+        for f in cf.as_completed([ex.submit(worker, c) for c in args.configs]):
+            f.result()
 
     lines = ["", f"## Design sweep (rank @ {args.iterations} iters, seqs {args.eval_ids})",
              "| Config (enc:color:wr:wp:ws) | PSNR | SSIM | LPIPS |",
