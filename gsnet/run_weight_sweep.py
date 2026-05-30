@@ -48,7 +48,8 @@ def one(combo, args):
          "--sparse_root", args.sparse_root,
          "--ckpt", os.path.join(model, "gsnet_latest.pt"),
          "--out_dir", sse, "--skip_baseline",
-         "--gpus", *[str(g) for g in args.gpus]])
+         "--test_ids", *args.eval_ids,
+         "--gpus", *[str(g) for g in args.gpus]], )
     g = json.load(open(os.path.join(sse, "sse_results.json")))["averages"]["gsnet"]
     return {"label": label, "w_rot": float(wr), "w_pos": float(wp),
             "w_scale": float(ws), **{k: g[k] for k in ("PSNR", "SSIM", "LPIPS")}}
@@ -65,6 +66,9 @@ def main():
     ap.add_argument("--epochs", type=int, default=200)
     ap.add_argument("--combos", nargs="+",
                     default=["1:1:1", "0.1:1:1", "0.1:10:1", "0:10:1", "0.1:10:10"])
+    ap.add_argument("--eval_ids", nargs="+", default=["110", "310", "510"],
+                    help="test sequences for ranking (subset to save time; "
+                         "re-eval the winner on all 5)")
     args = ap.parse_args()
 
     rows = []
