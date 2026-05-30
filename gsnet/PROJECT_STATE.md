@@ -23,7 +23,8 @@
 | zyc3 | Waymo SSE(卡5 7) → `runs/waymo_sse/sse_results.md` | 🔄 |
 | zyc4 | 监督敏感性 `run_supervision_sensitivity` → `runs/sup_sens/sensitivity.md` | 🔄 |
 | zyc5 | 设计 sweep 第二批(卡5 7) → `runs/design2/design.md` | 🔄 |
-> 待回收：两个 design.md、Waymo SSE、敏感性表。下一步：合并选最优配置→全5序列30k确认→定最终 Ours→重跑 CARLA主表SSE/CSE全量。
+| zyc6 | attention_v2 + 对照(M=16, `CORR/train_m16`) → `runs/design_attn/design.md` | 🔄 |
+> 待回收：design.md ×3（design/design2/design_attn）、Waymo SSE、敏感性表。下一步：合并所有配置选最优→全5序列30k确认→定最终 Ours→重跑 CARLA主表SSE/CSE全量。
 
 ## 1. 任务背景
 - 论文《GS-Net: Heterogeneous Vehicle Data Reuse via Generalizable Plug-and-Play 3DGS Module》**代码丢失，按论文重建**。仓库初始是官方 3DGS(Inria)。
