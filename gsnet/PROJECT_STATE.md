@@ -141,6 +141,9 @@ python -m gsnet.waymo_sse --root /mnt/zihanw/EmerNeRF/data/waymo/colmap_input --
 - **设计 sweep@7k/3序列**（runs/design）：**geoedge:tanh:0.1:10:1=24.47(最优)** > geoedge:tanh:0.1:10:10 24.23 > geoedge:sigmoid:0.1:10:1 23.73 > geom:tanh:0.1:10:1 23.43 > geom:sigmoid:0.1:10:1 23.33 > geom:sigmoid:1:1:1 23.25。**三改动(geoedge/tanh/调权)各有用且叠加，+1.22**。待 design2/design_attn 合并选全局最优 → 全5序列30k确认(vs基线24.67) → 定最终 Ours。
 - **Waymo SSE**（用弱 concat 模型）：baseline 30.13 / gsnet 30.20(+0.07)，LPIPS 0.244→0.235。≈基线(符合预期)，**待用最优配置重训 Waymo GS-Net 重测**。注:gsnet优化50min>基线29min(5×初始高斯)。
 - **监督敏感性**(30k/5序列,concat)：轴A 监督迭代 5k=23.80/10k=24.13/20k=23.96/(30k≈24.46)；轴B 密度 50%=24.03/25%=24.00/10%=23.64。**两轴优雅降级→对伪GT质量鲁棒**(reviewer C)。
+- **设计 sweep 合并(3批,@7k/3序列)**：top=geoedge:tanh:0.1:10:10(M3)24.76 / geoedge:tanh:0.1:10:1(M3)24.47 / attention:tanh(M16)24.43 / geom:tanh:0.1:10:1(M16)24.41。**结论**：tanh≫sigmoid、调权(0.1:10:*)≫默认、geoedge 最强 encoder、**M=16 明显帮 geom(+0.98)**、注意力即使 M16 也不更好。**⚠️7k/3序列噪声~0.5dB(同配置24.23 vs24.76)**→ 需 30k/5序列确认。**最有希望 geoedge×M16 未测**。
+- **finalist 30k/5序列确认中**（runs/final_m3: geoedge:tanh:0.1:10:{1,10} @M3；runs/final_m16: geoedge:tanh:0.1:10:{1,10}+geom:tanh:0.1:10:1 @M16）vs 基线24.67 → 定最终 Ours。
+- **CARLA→Waymo 零样本迁移**（reviewer 最关注的真实数据迁移）：`waymo_sse --ckpt <CARLA ckpt> --skip_baseline`；机制上归一化使其可迁移；先用 geom 预览、最终用 Ours 重跑。三方对比：Waymo基线30.13/Waymo自训30.20/CARLA→Waymo零样本=?
 
 ## 8. 给审稿人的回应（草稿，待真实数字填充）
 - **(A) Encoder 太简单**：补 encoder 设计消融(a–e)。结论：邻域必要(a最差)；**通用强encoder(图c/注意力d)不帮忙**→表达力非瓶颈；**审稿人建议的"显式几何"确有效((e)最好)，已采纳并进一步改进(geoedge)**。报告 PSNR/SSIM/LPIPS+参数+推理时间。
