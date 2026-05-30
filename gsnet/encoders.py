@@ -151,11 +151,43 @@ class GeoEdgeConvEncoder(nn.Module):
         return self.edge(edge).max(dim=1).values               # (B, D)
 
 
+class VectorAttentionEncoder(nn.Module):
+    """(d2) Stronger local attention: Point-Transformer-style *vector*
+    (subtraction) attention with per-channel weights, instead of scalar
+    dot-product. Benefits from a larger neighborhood M (rebuild correspondences
+    with --M 16). Relative coords are injected as a positional encoding on both
+    the relation and the values."""
+
+    def __init__(self, cfg):
+        super().__init__()
+        d = cfg.embed_dim
+        self.point = _mlp((cfg.in_dim, *cfg.point_mlp_hidden, d))
+        self.q = nn.Linear(d, d)
+        self.k = nn.Linear(d, d)
+        self.v = nn.Linear(d, d)
+        self.pos = _mlp((3, d))                 # positional encoding delta
+        self.gamma = _mlp((d, d))               # relation -> per-channel weights
+        self.out = _mlp((2 * d, cfg.context_dim, cfg.context_dim))
+
+    def forward(self, center_feat, neighbor_feat, center_xyz, neighbor_xyz):
+        f_c = self.point(center_feat)                       # (B, d)
+        f_n = self.point(neighbor_feat)                     # (B, M, d)
+        delta = self.pos(neighbor_xyz - center_xyz.unsqueeze(1))   # (B, M, d)
+        q = self.q(f_c).unsqueeze(1)                        # (B, 1, d)
+        k = self.k(f_n)                                     # (B, M, d)
+        v = self.v(f_n)                                     # (B, M, d)
+        w = self.gamma(q - k + delta)                       # (B, M, d) relation
+        attn = torch.softmax(w, dim=1)                      # over M, per channel
+        ctx = (attn * (v + delta)).sum(dim=1)               # (B, d)
+        return self.out(torch.cat([f_c, ctx], dim=-1))      # (B, D)
+
+
 _ENCODERS = {
     "mlp_only": MLPOnlyEncoder,
     "concat": ConcatMLPEncoder,
     "edgeconv": EdgeConvEncoder,
     "attention": AttentionEncoder,
+    "attention_v2": VectorAttentionEncoder,
     "geom": GeomEncoder,
     "geoedge": GeoEdgeConvEncoder,
 }

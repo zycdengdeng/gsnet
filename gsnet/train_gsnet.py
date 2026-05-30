@@ -132,7 +132,8 @@ def main():
     ap.add_argument("--context_dim", type=int, default=256)
     ap.add_argument("--pos_offset_scale", type=float, default=1.0)
     ap.add_argument("--encoder_type", default="concat",
-                    choices=["mlp_only", "concat", "edgeconv", "attention", "geom", "geoedge"])
+                    choices=["mlp_only", "concat", "edgeconv", "attention",
+                             "attention_v2", "geom", "geoedge"])
     ap.add_argument("--color_activation", default="sigmoid", choices=["sigmoid", "tanh"])
     ap.add_argument("--in_memory", type=int, default=1, help="1=hold data on GPU (fast)")
     ap.add_argument("--num_workers", type=int, default=4)

@@ -49,7 +49,7 @@ def one(cfg, args, gpu):
     if not os.path.exists(os.path.join(model, "gsnet_latest.pt")):
         run([PY, "-m", "gsnet.train_gsnet", "--corr_dir", args.corr_dir,
              "--out_dir", model, "--encoder_type", enc, "--color_activation", color,
-             "--epochs", str(args.epochs), "--in_memory", "1",
+             "--epochs", str(args.epochs), "--in_memory", "1", "--M", str(args.M),
              "--w_rot", wr, "--w_pos", wp, "--w_scale", ws], gpu)
     run([PY, "-m", "gsnet.run_sse", "--io_dir", args.io_dir,
          "--sparse_root", args.sparse_root,
@@ -68,6 +68,7 @@ def main():
     ap.add_argument("--out_dir", default="runs/design")
     ap.add_argument("--gpus", type=int, nargs="+", default=[1, 2, 3])
     ap.add_argument("--epochs", type=int, default=200)
+    ap.add_argument("--M", type=int, default=3, help="neighbors; must match --corr_dir build")
     ap.add_argument("--iterations", type=int, default=7000,
                     help="reduced 3DGS iterations for cheap ranking")
     ap.add_argument("--eval_ids", nargs="+", default=["110", "310", "510"])
