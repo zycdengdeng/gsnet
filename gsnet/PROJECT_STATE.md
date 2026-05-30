@@ -19,11 +19,11 @@
 ## 0.6 运行中的实验 / tmux（用户维护，尽力同步）
 | tmux | 内容 | 状态 |
 |---|---|---|
-| zyc1 | encoder 消融 `run_encoder_ablation` | ✅ 完成（见 §7.5 结果）|
-| zyc3 | CARLA基线SSE→Waymo诊断→Waymo G_dense→Waymo GS-Net 训练 | ✅ 均完成 |
-| zyc4 | CSE 110 自检(done)→监督敏感性 `run_supervision_sensitivity` | 🔄 敏感性进行中 |
-| (新) | **设计 sweep** `run_design_sweep`（卡 0 1 2 3 4 6）| 🔄 待跑/进行中 |
-> 待回收结果：① 设计 sweep `runs/design/design.md`；② 监督敏感性 `runs/sup_sens/sensitivity.md`；③ Waymo SSE；④ CSE 全量；⑤ CARLA 主表 SSE-Ours。
+| zyc1 | 设计 sweep `run_design_sweep` → `runs/design/design.md` | 🔄 |
+| zyc3 | Waymo SSE(卡5 7) → `runs/waymo_sse/sse_results.md` | 🔄 |
+| zyc4 | 监督敏感性 `run_supervision_sensitivity` → `runs/sup_sens/sensitivity.md` | 🔄 |
+| zyc5 | 设计 sweep 第二批(卡5 7) → `runs/design2/design.md` | 🔄 |
+> 待回收：两个 design.md、Waymo SSE、敏感性表。下一步：合并选最优配置→全5序列30k确认→定最终 Ours→重跑 CARLA主表SSE/CSE全量。
 
 ## 1. 任务背景
 - 论文《GS-Net: Heterogeneous Vehicle Data Reuse via Generalizable Plug-and-Play 3DGS Module》**代码丢失，按论文重建**。仓库初始是官方 3DGS(Inria)。
