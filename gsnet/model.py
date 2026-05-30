@@ -61,8 +61,11 @@ class GSNetConfig:
     # Hidden layout for the shared point encoder (6 -> ... -> embed_dim).
     point_mlp_hidden: tuple = (64, 128)
     # Geometry-aware encoder variant (encoder-design ablation):
-    #   mlp_only | concat (Ours) | edgeconv | attention | geom
+    #   mlp_only | concat (Ours) | edgeconv | attention | geom | geoedge
     encoder_type: str = "concat"
+    # Color-offset activation: "sigmoid" (paper, brighten-only) or "tanh"
+    # (allows darkening, range (-1,1)).
+    color_activation: str = "sigmoid"
     # Bound (in scene units) applied to the Tanh-activated position offset.
     # Paper bounds the raw offset to (-1, 1); set >1 if the scene is metric and
     # the K nearest dense Gaussians may sit farther than 1 unit from the SfM point.
@@ -130,7 +133,9 @@ class GSNet(nn.Module):
 
         # --- Color: incremental, Sigmoid offset on the 0-order SH (diffuse) ---
         if cfg.predict_color:
-            delta_rgb = torch.sigmoid(self.head_rgb(h).view(B, T, 3))
+            raw_rgb = self.head_rgb(h).view(B, T, 3)
+            delta_rgb = (torch.tanh(raw_rgb) if cfg.color_activation == "tanh"
+                         else torch.sigmoid(raw_rgb))
         else:
             delta_rgb = torch.zeros(B, T, 3, device=center_xyz.device)
         rgb = (center_rgb.unsqueeze(1) + delta_rgb).clamp(0.0, 1.0)

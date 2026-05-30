@@ -130,12 +130,34 @@ class GeomEncoder(nn.Module):
         return self.context(cat)
 
 
+class GeoEdgeConvEncoder(nn.Module):
+    """Geometric EdgeConv: combines graph aggregation (c) with explicit geometry
+    (e) -- edge features include relative coordinates and distance, then max-pool.
+    Motivated by the ablation where (e) explicit-geometry beat plain (c) edgeconv."""
+
+    def __init__(self, cfg):
+        super().__init__()
+        self.point = _mlp((cfg.in_dim, *cfg.point_mlp_hidden, cfg.embed_dim))
+        self.edge = _mlp((2 * cfg.embed_dim + 4, cfg.context_dim, cfg.context_dim))
+
+    def forward(self, center_feat, neighbor_feat, center_xyz, neighbor_xyz):
+        f_c = self.point(center_feat)
+        f_n = self.point(neighbor_feat)
+        M = f_n.shape[1]
+        f_c_rep = f_c.unsqueeze(1).expand(-1, M, -1)
+        rel = neighbor_xyz - center_xyz.unsqueeze(1)            # (B, M, 3)
+        dist = rel.norm(dim=-1, keepdim=True)                  # (B, M, 1)
+        edge = torch.cat([f_c_rep, f_n - f_c_rep, rel, dist], dim=-1)  # (B,M,2d+4)
+        return self.edge(edge).max(dim=1).values               # (B, D)
+
+
 _ENCODERS = {
     "mlp_only": MLPOnlyEncoder,
     "concat": ConcatMLPEncoder,
     "edgeconv": EdgeConvEncoder,
     "attention": AttentionEncoder,
     "geom": GeomEncoder,
+    "geoedge": GeoEdgeConvEncoder,
 }
 
 
