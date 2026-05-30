@@ -137,6 +137,11 @@ python -m gsnet.waymo_sse --root /mnt/zihanw/EmerNeRF/data/waymo/colmap_input --
 - **R&D流程**：`run_design_sweep`(encoder×color×权重,7k/3序列快排,配置级并行)→选优→全5序列30k确认；`run_weight_sweep`(仅权重)。
 - **下一招(若不够)**：集合级匹配损失（预测T↔GT K 最近邻/匈牙利匹配，替代任意 t-to-t 配对）。可能位置参数化改局部尺度、颜色去正偏置等。
 
+## 7.6 设计/敏感性/Waymo 结果（2026-05-30）
+- **设计 sweep@7k/3序列**（runs/design）：**geoedge:tanh:0.1:10:1=24.47(最优)** > geoedge:tanh:0.1:10:10 24.23 > geoedge:sigmoid:0.1:10:1 23.73 > geom:tanh:0.1:10:1 23.43 > geom:sigmoid:0.1:10:1 23.33 > geom:sigmoid:1:1:1 23.25。**三改动(geoedge/tanh/调权)各有用且叠加，+1.22**。待 design2/design_attn 合并选全局最优 → 全5序列30k确认(vs基线24.67) → 定最终 Ours。
+- **Waymo SSE**（用弱 concat 模型）：baseline 30.13 / gsnet 30.20(+0.07)，LPIPS 0.244→0.235。≈基线(符合预期)，**待用最优配置重训 Waymo GS-Net 重测**。注:gsnet优化50min>基线29min(5×初始高斯)。
+- **监督敏感性**(30k/5序列,concat)：轴A 监督迭代 5k=23.80/10k=24.13/20k=23.96/(30k≈24.46)；轴B 密度 50%=24.03/25%=24.00/10%=23.64。**两轴优雅降级→对伪GT质量鲁棒**(reviewer C)。
+
 ## 8. 给审稿人的回应（草稿，待真实数字填充）
 - **(A) Encoder 太简单**：补 encoder 设计消融(a–e)。结论：邻域必要(a最差)；**通用强encoder(图c/注意力d)不帮忙**→表达力非瓶颈；**审稿人建议的"显式几何"确有效((e)最好)，已采纳并进一步改进(geoedge)**。报告 PSNR/SSIM/LPIPS+参数+推理时间。
 - **(B) 真实数据**：Waymo 10场景，SSE 量化(基线vs GS-Net+3DGS)；后续 CSE 外推可视化。
