@@ -17,13 +17,17 @@
 **GS-Net 增益远低于论文**（见 §7.5）：encoder 消融发现 Ours(concat)=24.46 ≈ 基线 24.67，最好的 (e)Explicit-Geometry 也仅 25.12（+0.45），论文是 +2.08。**用户已同意改进网络设计/改论文**。当前在跑**设计 sweep**（`run_design_sweep.py`：encoder×颜色激活×损失权重，7k/3序列快速排序）找更好配置；若不够，下一步上**集合级匹配损失**。
 
 ## 0.6 运行中的实验 / tmux（用户维护，尽力同步）
-| tmux | 内容 | 状态 |
-|---|---|---|
-| zyc1 | finalist M=3 (30k/5序列) → `runs/final_m3/design.md` | 🔄 |
-| zyc3 | finalist M=16 (30k/5序列) → `runs/final_m16/design.md` | 🔄 |
-> 已完成回收：design/design2/design_attn(@7k)、Waymo SSE(+0.07,弱模型)、监督敏感性(优雅降级)。
-> 待回收：final_m3 / final_m16 两表(30k/5序列 vs 基线24.67) → 定最终 Ours。
-> 之后统一收尾：CARLA主表SSE / CSE全量 / Waymo重训 + CARLA→Waymo零样本迁移（均用最终 Ours）。
+**✅ 最终 Ours 已定：`geom:tanh:0.1:10:1 @ M=3`，ckpt=`runs/final_m3/model/geom_tanh_wr0.1_wp10_ws1/gsnet_latest.pt`。**
+- finalist 30k/5序列：geom@M3 **25.99**(SSIM0.908,LPIPS0.172) / attention@M16 26.23(略高但选 geom：叙事自洽+M3最简，0.24在噪声内) / geoedge@M16 25.86。**基线24.67→Ours 25.99(+1.32)**。CARLA 主表已成(基线 runs/sse + Ours runs/final_m3/sse/geom_...)。
+- 注：M 影响在30k反转(geom M3 25.99>M16 25.44)，7k排序有噪声，故用 M=3。
+
+| tmux | 内容 | 卡 | 产出 |
+|---|---|---|---|
+| zyc1 | CSE 全量(基线+GS-Net) | 0 1 2 3 | runs/cse/cse_results.md |
+| zyc2 | Waymo 重训(geom配方)→Waymo SSE | 4 | runs/waymo_sse_geom/sse_results.md |
+| zyc3 | CARLA→Waymo 零样本迁移 | 5 | runs/waymo_transfer/sse_results.md |
+| zyc4 | encoder 消融最终配方重跑(a–e,tanh:0.1:10:1,M3) | 6 7 | runs/encoder_ablation_final/design.md |
+> 这 4 个是最终收尾。跑完即可填全部 rebuttal 数字。
 
 ## 1. 任务背景
 - 论文《GS-Net: Heterogeneous Vehicle Data Reuse via Generalizable Plug-and-Play 3DGS Module》**代码丢失，按论文重建**。仓库初始是官方 3DGS(Inria)。
