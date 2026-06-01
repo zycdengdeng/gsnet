@@ -22,7 +22,7 @@ import threading
 import time
 
 from gsnet.waymo import resolve_scene, seg_name, dense_dir, sparse_points
-from gsnet.make_cam_split import write_cam_split
+from gsnet.make_cam_split import write_cam_split, write_camera_split
 
 PY = sys.executable
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -98,12 +98,19 @@ def main():
     ap.add_argument("--n_holdout", type=int, default=4)
     ap.add_argument("--skip_baseline", action="store_true")
     ap.add_argument("--skip_gsnet", action="store_true")
+    ap.add_argument("--target_cams", nargs="+", default=[],
+                    help="cross-sensor: hold out these entire cameras as test "
+                         "(e.g. cam3 cam4 = side); default = per-camera frame holdout")
     args = ap.parse_args()
 
-    # Write the per-camera split up-front (shared by both configs).
+    # Write the split up-front (shared by both configs): camera-holdout for
+    # cross-sensor (--target_cams) else per-camera frame holdout (SSE).
     scenes = [resolve_scene(args.root, s) for s in args.test_scenes]
     for sc in scenes:
-        write_cam_split(dense_dir(sc), args.n_holdout)
+        if args.target_cams:
+            write_camera_split(dense_dir(sc), args.target_cams)
+        else:
+            write_cam_split(dense_dir(sc), args.n_holdout)
 
     jobs = []
     for sc in scenes:

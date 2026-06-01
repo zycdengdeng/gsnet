@@ -54,6 +54,23 @@ def write_cam_split(source, n_holdout=4):
     return out
 
 
+def write_camera_split(source, test_cams):
+    """Hold out ENTIRE cameras as test (e.g. side cameras) for cross-sensor
+    (front-train -> side-synthesis). test_cams: dir prefixes e.g. ['cam3','cam4']."""
+    sparse = os.path.join(source, "sparse", "0")
+    try:
+        extr = read_extrinsics_binary(os.path.join(sparse, "images.bin"))
+    except Exception:
+        extr = read_extrinsics_text(os.path.join(sparse, "images.txt"))
+    tset = set(test_cams)
+    names = sorted(extr[k].name for k in extr if os.path.dirname(extr[k].name) in tset)
+    out = os.path.join(sparse, "test.txt")
+    with open(out, "w") as f:
+        f.write("\n".join(names) + "\n")
+    print(f"[cam-split] {out}: {len(names)} test images from cameras {test_cams}")
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", required=True, help="COLMAP dir with sparse/0 (e.g. <scene>/colmap/dense)")
