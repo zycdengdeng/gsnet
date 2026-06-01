@@ -13,21 +13,25 @@
 - 多行命令易因续行 `\` 后空行而断 → 给用户命令**写成单行**。
 
 ## 0.5 当前状态 & 下一步（最重要）
-- **最终 Ours 已定：`geom:tanh:0.1:10:1 @ M=3`**，ckpt=`runs/final_m3/model/geom_tanh_wr0.1_wp10_ws1/gsnet_latest.pt`。
-- **⚠️ 关键问题：方差大**。基线 3DGS 确定性（`safe_state` 固定种子）→ 基线数可靠；**GS-Net 训练随机**→ 下游 PSNR ±0.5–0.9dB（同配置 geom@M3 两次 25.99 vs 25.07）。**单次数不可信**。
-- **正在跑**：`run_multiseed`（geom×5 种子，SSE+CSE）→ `runs/multiseed/multiseed.md`，给 mean±std。
-- 出来后：据 mean±std 定诚实数字 + 决定 CSE/真实数据在 rebuttal 怎么讲。
+- **最终 Ours（CARLA）已定：`geom:tanh:0.1:10:1 @ M=3`**，ckpt=`runs/final_m3/model/geom_tanh_wr0.1_wp10_ws1/gsnet_latest.pt`。CARLA 主表：基线 24.67 → Ours ~25-26（方差±0.5-0.9，单次不可信）。
+- **⚠️ 方差大**：基线 3DGS 确定性(safe_state固定种子)→基线可靠；GS-Net 训练随机→下游 PSNR ±0.5-0.9dB。结论看趋势、>0.8dB 才算真涨。
+- **核心未决问题**：GS-Net 在 **Waymo / CSE** 上没起效（CARLA SSE +1.3 有效，但 CARLA CSE≈基线、Waymo 3相机≈基线、Waymo稀疏更差）。诊断=GS-Net 是"锚定式局部密化"，只在"有覆盖空洞+视角够"的 regime 有效；Waymo 前视无空洞。**当前正用 5 相机 Waymo（前视→侧视跨传感器）验证 regime 假设**。
+- **用户外出，已把所有能跑的挂上自动队列**（见 §0.6）。回来收 5 份结果。
+- **训练速度更正**：`--in_memory` 不是"几分钟"，CARLA(87万点)实测 **~1hr/训练**(kernel-launch 受限)，比旧 DataLoader 2h 快一倍而已。
 
-## 0.6 tmux（用户维护）— 当前(5相机Waymo + T扫描)
-| tmux | 内容 | 卡 | 产出 |
+## 0.6 自动队列 / 运行中（2026-06，用户外出无人盯）
+按**产出目录**认（比 tmux 名可靠）。全部会自动训完→自动评测出结果：
+| 实验 | 卡 | 产出 | 备注 |
 |---|---|---|---|
-| zyc1 | Waymo5 Step3训练→Step4a 5相机SSE | 0 1 | runs/waymo5_sse/sse_results.md |
-| zyc3 | Step4b 跨传感器(基线+GS-Net, --target_cams cam3 cam4) | 2 3 | runs/waymo5_cse/sse_results.md |
-| zyc4 | Waymo 跨传感器 T扫描{3,5,8,12,16} | 4 5 6 7 | runs/Tsweep_waymo_cse/Tsweep.md |
-| 任意空闲tmux(如zyc5) | CARLA T扫描{3,5,8,12,16} | 按空卡填--gpus | runs/Tsweep_carla/Tsweep.md |
-> Waymo5: colmap_input_5cam(5相机×20帧,SfM+去畸变+MVS);G_dense=runs/waymo5_gdense(全10);corr=CORR/waymo5(8训练,scale29-57,无clip);模型=runs/waymo5_gsnet(geom:tanh:0.1:10:1,T5,M3)。相机 cam0-2=前视,cam3-4=侧视。测试场景 10275/15868。
-> 重点 zyc3(跨传感器 GS-Net vs 基线)=验证 GS-Net 在真实覆盖空洞 regime 是否起效。T扫描=实测"猛密化"是否有用(不信论文T=5;看趋势,>0.8dB才算真涨)。
-> 历史完成：CARLA基线SSE24.67/Ours(geom:tanh:0.1:10:1@M3)~25-26(方差±0.5-0.9)、CSE≈基线、encoder消融(调损后各encoder打平)、敏感性(优雅降级)、Waymo3相机(≈基线)、路径2(死)、多种子(runs/multiseed)。
+| CARLA T扫描{3,5,8,12,16} | 0-4 | `runs/Tsweep_carla/Tsweep.md` | 5个T并行训练中→评测 |
+| Waymo5 Step3 主模型训练 | 0 | `runs/waymo5_gsnet/`(train_times.json=完成标志) | 完成后触发4a/4b |
+| Waymo 跨传感器 T扫描{3,5,8,12,16} | 4-7 | `runs/Tsweep_waymo_cse/Tsweep.md` | --target_cams cam3 cam4 |
+| **4a 5相机SSE**(等Step3) | 0 1 | `runs/waymo5_sse/sse_results.md` | 自动waiter:`until [ -f runs/waymo5_gsnet/train_times.json ]` |
+| **4b 跨传感器**(等Step3) | 2 3 | `runs/waymo5_cse/sse_results.md` | 同上;**最关键结果** |
+> Waymo5 数据: `/mnt/zihanw/EmerNeRF/data/waymo/colmap_input_5cam`(5相机×20帧,SfM+去畸变PINHOLE+MVS,10 segment)。G_dense=runs/waymo5_gdense(全10 OK)。corr=CORR/waymo5(8训练,排除10275/15868两测试,scale29-57无clip)。相机 cam0=FRONT,1=FL,2=FR,3=SL,4=SR;前视=cam0/1/2,侧视=cam3/4。
+> **回来要看的 5 份**: Tsweep_carla, Tsweep_waymo_cse, waymo5_gsnet/train_times, waymo5_sse, waymo5_cse。**最关键=waymo5_cse(跨传感器)**:若 GS-Net 明显超基线→证明网络/设计没问题、只是之前 Waymo 前视 regime 选错。
+> 卡有重叠共用(0,4)→慢但不崩(显存80G够)。
+> 历史完成：encoder消融(调损后各encoder打平,edgeconv偏低)、伪GT敏感性(优雅降级=reviewer C搞定)、Waymo诊断(sfm28.18/mvs29.33)、CARLA→Waymo零样本(负迁移,已弃用)、路径2 input_subsample(死路20.05<基线21.31)。
 
 ## 1. 任务背景
 - 论文《GS-Net: Heterogeneous Vehicle Data Reuse via Generalizable Plug-and-Play 3DGS Module》**代码丢失、按论文重建**（仓库初始=官方 3DGS Inria）。
