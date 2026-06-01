@@ -118,6 +118,13 @@
   - **路径2(便宜但低预期)**：`--input_subsample`(已加)训"稀疏输入→稠密目标";但Waymo非点稀疏,大概率无效。**已验证:input_subsample版20.05 < 全密度版20.64 < 基线21.31 → 路径2确认死路**(少视角痛点=过参数化,非点稀疏)。**只剩路径1。**
 - **诚实风险**：GS-Net只吃SfM点(无图像特征),极稀疏下不如图像条件前馈法(pixelSplat/MVSplat/DUSt3R)。备选:加轻量图像/LiDAR特征(Waymo/CARLA都有LiDAR)。
 
+## 7.10 路径1：5相机 Waymo（数据已就绪 2026-06）
+- 数据：`/mnt/zihanw/EmerNeRF/data/waymo/colmap_input_5cam/<seg>/colmap/dense/{fused.ply,images/cam0..4,sparse/0}`，5相机×20帧，10 segment，SfM+去畸变PINHOLE+MVS 齐全。
+- 相机约定(待用户确认)：cam0=FRONT,1=FL,2=FR,3=SL,4=SR；前视组=cam0/1/2，侧视组=cam3/4。
+- 流程：waymo_gdense(runs/waymo5_gdense)→waymo_corr(CORR/waymo5,排除2测试)→train_gsnet(geom:tanh:0.1:10:1→runs/waymo5_gsnet)→ **1a 5相机SSE**(runs/waymo5_sse,帧留出) + **1b 跨传感器**(runs/waymo5_cse,`--target_cams cam3 cam4`,前视训练→侧视测试)。
+- 代码新增：`make_cam_split.write_camera_split`(整相机留出) + `waymo_sse --target_cams`。
+- 测试场景:10275/15868。预期:1b侧视有覆盖空洞→GS-Net应起效(验证"网络没问题、之前regime错")。
+
 ## 8. 待办
 1. **多种子结果** → 定 SSE/CSE 的 mean±std；据此最终决定 CSE/真实数据怎么写。
 2. 若想拉高 CSE/整体：可试**集合级匹配损失**（预测T↔GT K最近邻/匈牙利匹配，替代任意t-to-t配对）——尚未实现。
