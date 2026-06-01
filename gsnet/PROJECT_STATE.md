@@ -24,7 +24,7 @@
 | zyc1 | Waymo5 Step3训练→Step4a 5相机SSE | 0 1 | runs/waymo5_sse/sse_results.md |
 | zyc3 | Step4b 跨传感器(基线+GS-Net, --target_cams cam3 cam4) | 2 3 | runs/waymo5_cse/sse_results.md |
 | zyc4 | Waymo 跨传感器 T扫描{3,5,8,12,16} | 4 5 6 7 | runs/Tsweep_waymo_cse/Tsweep.md |
-| zyc2 | CARLA T扫描{3,5,8,12,16} | 共卡 | runs/Tsweep_carla/Tsweep.md |
+| 任意空闲tmux(如zyc5) | CARLA T扫描{3,5,8,12,16} | 按空卡填--gpus | runs/Tsweep_carla/Tsweep.md |
 > Waymo5: colmap_input_5cam(5相机×20帧,SfM+去畸变+MVS);G_dense=runs/waymo5_gdense(全10);corr=CORR/waymo5(8训练,scale29-57,无clip);模型=runs/waymo5_gsnet(geom:tanh:0.1:10:1,T5,M3)。相机 cam0-2=前视,cam3-4=侧视。测试场景 10275/15868。
 > 重点 zyc3(跨传感器 GS-Net vs 基线)=验证 GS-Net 在真实覆盖空洞 regime 是否起效。T扫描=实测"猛密化"是否有用(不信论文T=5;看趋势,>0.8dB才算真涨)。
 > 历史完成：CARLA基线SSE24.67/Ours(geom:tanh:0.1:10:1@M3)~25-26(方差±0.5-0.9)、CSE≈基线、encoder消融(调损后各encoder打平)、敏感性(优雅降级)、Waymo3相机(≈基线)、路径2(死)、多种子(runs/multiseed)。
