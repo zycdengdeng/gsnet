@@ -31,6 +31,7 @@
 > Waymo5 数据: `/mnt/zihanw/EmerNeRF/data/waymo/colmap_input_5cam`(5相机×20帧,SfM+去畸变PINHOLE+MVS,10 segment)。G_dense=runs/waymo5_gdense(全10 OK)。corr=CORR/waymo5(8训练,排除10275/15868两测试,scale29-57无clip)。相机 cam0=FRONT,1=FL,2=FR,3=SL,4=SR;前视=cam0/1/2,侧视=cam3/4。
 > **回来要看的 5 份**: Tsweep_carla, Tsweep_waymo_cse, waymo5_gsnet/train_times, waymo5_sse, waymo5_cse。**最关键=waymo5_cse(跨传感器)**:若 GS-Net 明显超基线→证明网络/设计没问题、只是之前 Waymo 前视 regime 选错。
 > 卡有重叠共用(0,4)→慢但不崩(显存80G够)。
+> **第二批(闸门队列,等上面两个Tsweep.md后自动跑)**：补充1 Waymo5相机SSE的T扫描→`runs/Tsweep_waymo_sse/Tsweep.md`；补充2 CARLA多种子方差(geom×5种子,SSE+CSE)→`runs/multiseed/multiseed.md`(给主表 mean±std)。
 > 历史完成：encoder消融(调损后各encoder打平,edgeconv偏低)、伪GT敏感性(优雅降级=reviewer C搞定)、Waymo诊断(sfm28.18/mvs29.33)、CARLA→Waymo零样本(负迁移,已弃用)、路径2 input_subsample(死路20.05<基线21.31)。
 
 ## 1. 任务背景
