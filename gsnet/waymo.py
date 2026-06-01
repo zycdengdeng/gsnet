@@ -28,10 +28,13 @@ def _first_existing(paths):
 
 
 def sparse_model_dir(scene_path):
-    """The COLMAP sparse model dir (containing cameras/images/points3D.bin)."""
+    """The COLMAP sparse model dir (containing cameras/images/points3D.bin).
+    Prefers an undistorted (PINHOLE) dense model when present."""
     return _first_existing([
         os.path.join(scene_path, "colmap", "dense", "sparse", "0"),
+        os.path.join(scene_path, "colmap", "dense", "sparse"),
         os.path.join(scene_path, "colmap", "sparse", "0"),
+        os.path.join(scene_path, "colmap", "sparse"),
         os.path.join(scene_path, "sparse", "0"),
     ])
 
@@ -45,24 +48,23 @@ def images_dir(scene_path):
 
 
 def _link(link_path, target):
-    if os.path.islink(link_path) or os.path.exists(link_path):
-        try:
+    target = os.path.abspath(target)
+    try:
+        if os.path.islink(link_path):
+            if os.path.realpath(link_path) == os.path.realpath(target):
+                return
             os.remove(link_path)
-        except IsADirectoryError:
-            os.rmdir(link_path)
-    os.symlink(os.path.abspath(target), link_path)
+        os.symlink(target, link_path)
+    except FileExistsError:
+        pass  # created concurrently by a sibling worker
 
 
 def scene_source(scene_path):
-    """Return a 3DGS-ready source dir (sparse/0 + images), creating symlinks."""
+    """Return a 3DGS-ready source dir (sparse/0 + images) via symlinks,
+    normalizing any COLMAP layout (dense/sparse, sparse/0, etc.)."""
     sp0 = sparse_model_dir(scene_path)
     img = images_dir(scene_path)
     assert sp0 and img, f"missing sparse/images for {scene_path}"
-    # If already in canonical dense layout, use it directly.
-    dense = os.path.join(scene_path, "colmap", "dense")
-    if os.path.normpath(sp0) == os.path.normpath(os.path.join(dense, "sparse", "0")) \
-            and os.path.isdir(os.path.join(dense, "images")):
-        return dense
     src = os.path.join(scene_path, "colmap", "_gsnet_src")
     os.makedirs(os.path.join(src, "sparse"), exist_ok=True)
     _link(os.path.join(src, "sparse", "0"), sp0)
