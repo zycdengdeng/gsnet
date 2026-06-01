@@ -37,9 +37,18 @@ from gsnet.common import (
 
 
 def build_for_sequence(sparse_path, gdense_path, out_path, K=5, M=3,
-                       normalize=True, subsample=1.0, **filt_kwargs):
+                       normalize=True, subsample=1.0, input_subsample=1.0,
+                       **filt_kwargs):
     t0 = time.time()
     cxyz, crgb = read_points_any(sparse_path)
+    # Optional subsampling of the INPUT sparse points (train GS-Net to densify
+    # from a sparser input -> dense G_dense target; for sparse-input regimes).
+    if input_subsample < 1.0:
+        n0 = cxyz.shape[0]
+        rng = np.random.default_rng(abs(hash("in" + os.path.basename(out_path))) % (2**32))
+        keep = rng.choice(n0, int(round(n0 * input_subsample)), replace=False)
+        cxyz, crgb = cxyz[keep], crgb[keep]
+        print(f"[input_subsample] {os.path.basename(out_path)}: {n0} -> {cxyz.shape[0]}")
     g = read_dense_gaussians(gdense_path)
     g = filter_dense(g, cxyz, **filt_kwargs)
     # Optional random subsampling of G_dense (probes sensitivity to pseudo-GT
@@ -147,12 +156,15 @@ def main():
                     help="3DGS optimization iteration of G_dense to supervise from")
     ap.add_argument("--gdense_subsample", type=float, default=1.0,
                     help="fraction of G_dense to keep (pseudo-GT density sensitivity)")
+    ap.add_argument("--input_subsample", type=float, default=1.0,
+                    help="fraction of INPUT sparse points to keep (sparse-input training)")
     args = ap.parse_args()
 
     filt = dict(radius_margin=args.radius_margin, opacity_min=args.opacity_min,
                 sor_k=args.sor_k)
     common = dict(K=args.K, M=args.M, normalize=not args.no_normalize,
-                  subsample=args.gdense_subsample, **filt)
+                  subsample=args.gdense_subsample,
+                  input_subsample=args.input_subsample, **filt)
 
     if args.batch:
         assert args.io_dir and args.sparse_root and args.out_dir

@@ -36,6 +36,8 @@ def main():
     ap.add_argument("--radius_margin", type=float, default=1.5)
     ap.add_argument("--opacity_min", type=float, default=0.005)
     ap.add_argument("--sor_k", type=int, default=0)
+    ap.add_argument("--input_subsample", type=float, default=1.0,
+                    help="fraction of INPUT sparse points to keep (sparse-input training)")
     ap.add_argument("--workers", type=int, default=1)
     args = ap.parse_args()
 
@@ -46,7 +48,7 @@ def main():
 
     common = dict(K=args.K, M=args.M, normalize=not args.no_normalize,
                   radius_margin=args.radius_margin, opacity_min=args.opacity_min,
-                  sor_k=args.sor_k)
+                  sor_k=args.sor_k, input_subsample=args.input_subsample)
     tasks = []
     for s in scenes:
         gd = gdense_path(args.gdense_dir, s, args.iterations)
