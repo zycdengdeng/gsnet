@@ -148,6 +148,15 @@ python -m gsnet.waymo_sse --root /mnt/zihanw/EmerNeRF/data/waymo/colmap_input --
 - **finalist 30k/5序列确认中**（runs/final_m3: geoedge:tanh:0.1:10:{1,10} @M3；runs/final_m16: geoedge:tanh:0.1:10:{1,10}+geom:tanh:0.1:10:1 @M16）vs 基线24.67 → 定最终 Ours。
 - **CARLA→Waymo 零样本迁移**（reviewer 最关注的真实数据迁移）：`waymo_sse --ckpt <CARLA ckpt> --skip_baseline`；机制上归一化使其可迁移；先用 geom 预览、最终用 Ours 重跑。三方对比：Waymo基线30.13/Waymo自训30.20/CARLA→Waymo零样本=?
 
+## 7.7 ⚠️ 最终收尾结果 + 方差问题（2026-05-30，重要）
+- **基线 3DGS 确定性**（safe_state 固定种子）→ 基线 SSE 24.67 / CSE 19.66 / Waymo 30.16 可靠；**GS-Net 训练随机**→ 下游 PSNR 波动 ~±0.5–0.9dB（同配置 geom:tanh:0.1:10:1@M3 两次：25.99 vs 25.07）。**单次数不可信，需多种子**。
+- **SSE**：GS-Net 两次都超基线(+1.32/+0.40) → 真实但中等提升，待多种子定 mean±std。
+- **CSE 全量**(runs/cse)：基线 19.66 → GS-Net **19.52(−0.14)**，逐场景 2升3降。**未复现论文 +1.86**，目前 ≈ 基线。⚠️
+- **Waymo SSE**(geom 重训, runs/waymo_sse_geom)：基线30.16→30.22(+0.06)，LPIPS 0.243→0.235。基线已高、空间小。
+- **CARLA→Waymo 零样本**(runs/waymo_transfer)：26.63 vs 基线30.16(**−3.5,负迁移**)。sim2real gap 明显，先验不能零样本迁移。
+- **encoder 消融最终配方**(tanh:0.1:10:1,M3, runs/encoder_ablation_final)：concat25.44/mlp_only25.24/attention25.09/geom25.07/edgeconv24.11。**调好损失后各 encoder 打平(除edgeconv)→ 增益来自损失设计(tanh+调权)而非encoder复杂度→支持"轻量encoder足够"**。
+- **下一步**：`run_multiseed`（geom×5种子,SSE+CSE,`runs/multiseed/multiseed.md`）定 mean±std；据此定 rebuttal 对 CSE/真实数据的诚实表述。
+
 ## 8. 给审稿人的回应（草稿，待真实数字填充）
 - **(A) Encoder 太简单**：补 encoder 设计消融(a–e)。结论：邻域必要(a最差)；**通用强encoder(图c/注意力d)不帮忙**→表达力非瓶颈；**审稿人建议的"显式几何"确有效((e)最好)，已采纳并进一步改进(geoedge)**。报告 PSNR/SSIM/LPIPS+参数+推理时间。
 - **(B) 真实数据**：Waymo 10场景，SSE 量化(基线vs GS-Net+3DGS)；后续 CSE 外推可视化。
