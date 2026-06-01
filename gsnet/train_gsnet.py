@@ -26,6 +26,9 @@ from gsnet.dataset import CorrespondenceDataset
 
 def train(args):
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    if getattr(args, "seed", None) is not None:
+        torch.manual_seed(args.seed)
+        torch.cuda.manual_seed_all(args.seed)
     cfg = GSNetConfig(
         T=args.T, M=args.M,
         embed_dim=args.embed_dim, context_dim=args.context_dim,
@@ -136,6 +139,7 @@ def main():
                              "attention_v2", "geom", "geoedge"])
     ap.add_argument("--color_activation", default="sigmoid", choices=["sigmoid", "tanh"])
     ap.add_argument("--in_memory", type=int, default=1, help="1=hold data on GPU (fast)")
+    ap.add_argument("--seed", type=int, default=None, help="random seed (for multi-seed variance study)")
     ap.add_argument("--num_workers", type=int, default=4)
     ap.add_argument("--log_every", type=int, default=1)
     ap.add_argument("--save_every", type=int, default=50)
