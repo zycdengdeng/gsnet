@@ -1,15 +1,11 @@
 #
-# Path helpers for the Waymo real-data experiment (reviewer-requested validation
-# on a real autonomous-driving dataset).
+# Path helpers for the Waymo real-data experiment, robust to two COLMAP layouts:
+#   (A) dense layout : <scene>/colmap/dense/{fused.ply, images/, sparse/0/}
+#   (B) sparse layout: <scene>/colmap/sparse/0/  + <scene>/images/   (no dense/)
 #
-# Per-scene COLMAP layout (front 3 cameras x 20 frames = 60 images):
-#   <scene>/colmap/dense/
-#       fused.ply                      # MVS dense point cloud (3DGS init for G_dense)
-#       images/cam{0,1,2}/0NN.jpg       # undistorted images
-#       sparse/0/{cameras,images,points3D}.bin   # sparse SfM (poses + sparse points)
-#
-# The dense dir is a self-contained COLMAP scene that the 3DGS pipeline reads
-# directly (it has sparse/0 + images/).
+# `scene_source(scene)` returns a 3DGS-ready source directory (containing
+# sparse/0 and images) by symlinking whatever is found, so train.py/run_sse work
+# unchanged for either layout.
 #
 
 import glob
@@ -24,27 +20,76 @@ def seg_name(scene_path):
     return os.path.basename(scene_path.rstrip("/"))
 
 
+def _first_existing(paths):
+    for p in paths:
+        if os.path.exists(p):
+            return p
+    return None
+
+
+def sparse_model_dir(scene_path):
+    """The COLMAP sparse model dir (containing cameras/images/points3D.bin)."""
+    return _first_existing([
+        os.path.join(scene_path, "colmap", "dense", "sparse", "0"),
+        os.path.join(scene_path, "colmap", "sparse", "0"),
+        os.path.join(scene_path, "sparse", "0"),
+    ])
+
+
+def images_dir(scene_path):
+    return _first_existing([
+        os.path.join(scene_path, "colmap", "dense", "images"),
+        os.path.join(scene_path, "images"),
+        os.path.join(scene_path, "colmap", "images"),
+    ])
+
+
+def _link(link_path, target):
+    if os.path.islink(link_path) or os.path.exists(link_path):
+        try:
+            os.remove(link_path)
+        except IsADirectoryError:
+            os.rmdir(link_path)
+    os.symlink(os.path.abspath(target), link_path)
+
+
+def scene_source(scene_path):
+    """Return a 3DGS-ready source dir (sparse/0 + images), creating symlinks."""
+    sp0 = sparse_model_dir(scene_path)
+    img = images_dir(scene_path)
+    assert sp0 and img, f"missing sparse/images for {scene_path}"
+    # If already in canonical dense layout, use it directly.
+    dense = os.path.join(scene_path, "colmap", "dense")
+    if os.path.normpath(sp0) == os.path.normpath(os.path.join(dense, "sparse", "0")) \
+            and os.path.isdir(os.path.join(dense, "images")):
+        return dense
+    src = os.path.join(scene_path, "colmap", "_gsnet_src")
+    os.makedirs(os.path.join(src, "sparse"), exist_ok=True)
+    _link(os.path.join(src, "sparse", "0"), sp0)
+    _link(os.path.join(src, "images"), img)
+    return src
+
+
+# Backwards-compatible alias used by drivers.
 def dense_dir(scene_path):
-    return os.path.join(scene_path, "colmap", "dense")
+    return scene_source(scene_path)
 
 
 def fused_ply(scene_path):
-    return os.path.join(dense_dir(scene_path), "fused.ply")
+    return os.path.join(scene_path, "colmap", "dense", "fused.ply")
 
 
 def sparse_points(scene_path):
-    """Sparse SfM points (the GS-Net input) for a Waymo scene."""
-    return os.path.join(dense_dir(scene_path), "sparse", "0", "points3D.bin")
+    """Sparse SfM points (GS-Net input)."""
+    return os.path.join(sparse_model_dir(scene_path), "points3D.bin")
 
 
 def gdense_path(gdense_dir, scene_path, iterations=30000):
-    """Path to the generated G_dense for a scene (see waymo_gdense.py)."""
     return os.path.join(gdense_dir, seg_name(scene_path), "point_cloud",
                         f"iteration_{iterations}", "point_cloud.ply")
 
 
 def resolve_scene(root, name_or_path):
-    """Accept either a full path or a segment name under root."""
     if os.path.isdir(name_or_path):
         return name_or_path
     return os.path.join(root, name_or_path)
