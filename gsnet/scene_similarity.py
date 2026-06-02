@@ -164,13 +164,30 @@ def build_groups(args):
         label, pat = spec.split("=", 1)
         paths = sorted(_glob.glob(pat))
         assert paths, f"no files match {pat} (label {label})"
-        groups.append((label, paths))
+        if args.explode:
+            # each file becomes its own group; the spec label is the scene tag
+            # (so its segments share a scene -> excludable as same-scene pairs).
+            for i, p in enumerate(paths):
+                groups.append((f"{label}#{i}", [p], label, family_of(label)))
+        else:
+            groups.append((label, paths, label, family_of(label)))
     waymo = list(args.scenes) if args.scenes else (
         discover_scenes(args.root) if args.root else [])
     for s in waymo:
-        groups.append((seg_name(s), [sparse_points(s)]))
+        nm = seg_name(s)
+        groups.append((nm, [sparse_points(s)], nm, family_of(nm)))
     assert groups, "no scenes found (give --root, --scenes, or --point_specs)"
     return groups
+
+
+def family_of(label):
+    """Coarse dataset family for block statistics."""
+    low = label.lower()
+    if low.startswith("carla"):
+        return "carla"
+    if low.startswith("segment-") or low.startswith("waymo"):
+        return "waymo"
+    return label.split("_")[0] or "other"
 
 
 def main():
@@ -181,6 +198,10 @@ def main():
     ap.add_argument("--point_specs", nargs="+", default=[],
                     help="generic groups: LABEL=GLOB ... (pools files per label; "
                          "e.g. carla_s1=/mnt/.../sparse_point/S01/*_sparse.ply)")
+    ap.add_argument("--explode", action="store_true",
+                    help="treat EACH file in a --point_specs glob as its own group "
+                         "(spec label becomes its scene tag) -- control for the "
+                         "pooling artifact: each CARLA segment = one reconstruction")
     ap.add_argument("--test_scenes", nargs="+", default=[],
                     help="names/substrings of held-out test scenes to highlight")
     ap.add_argument("--out_dir", default="runs/scene_similarity")
@@ -191,12 +212,14 @@ def main():
 
     groups = build_groups(args)
     names = [g[0] for g in groups]
+    scene_tags = [g[2] for g in groups]
+    families = [g[3] for g in groups]
     is_test = [any(t in nm for t in args.test_scenes) for nm in names]
     os.makedirs(args.out_dir, exist_ok=True)
 
     # --- per-group features ---
     feats, meta = [], {}
-    for nm, paths in groups:
+    for nm, paths, _tag, _fam in groups:
         f, info = group_features(paths, args.k, args.max_pts)
         feats.append(f)
         meta[nm] = info
@@ -228,9 +251,36 @@ def main():
         return (float(np.mean(vals)), float(np.std(vals))) if vals else (float("nan"),) * 2
 
     tt_mean, tt_std = block_mean(tr, tr, exclude_diag=True)   # train<->train
+
+    # --- family block analysis (CARLA-internal / Waymo-internal / cross),
+    #     EXCLUDING same-scene pairs so pooling/segment granularity is fair ---
+    fams = sorted(set(families))
+    fam_idx = {f: [i for i in range(N) if families[i] == f] for f in fams}
+
+    def pair_mean(rows, cols, same_family):
+        vals = []
+        for i in rows:
+            for j in cols:
+                if i == j or scene_tags[i] == scene_tags[j]:
+                    continue              # drop self + same-scene pairs
+                if same_family and j <= i:
+                    continue              # each unordered pair once
+                vals.append(SW[i, j])
+        return [float(np.mean(vals)), float(np.std(vals)), len(vals)] if vals \
+            else [float("nan"), float("nan"), 0]
+
+    blocks = {}
+    for a in range(len(fams)):
+        for b in range(a, len(fams)):
+            fa, fb = fams[a], fams[b]
+            key = f"{fa}-{fb}"
+            blocks[key] = pair_mean(fam_idx[fa], fam_idx[fb], same_family=(fa == fb))
+
     summary = {
-        "scenes": names, "is_test": is_test,
+        "scenes": names, "is_test": is_test, "families": families,
+        "scene_tags": scene_tags, "exploded": args.explode,
         "train_train_meanstd": [tt_mean, tt_std],
+        "family_blocks_sw": blocks,   # {"carla-carla":[mean,std,n], ...} same-scene excluded
         "per_test_scene": {},
         "sliced_wasserstein": SW.tolist(), "mmd_rbf": MMD.tolist(),
         "feature_names": FEATURE_NAMES, "meta": meta,
@@ -295,6 +345,17 @@ def main():
     lines += ["",
               f"**Train<->train distance**: mean={tt_mean:.3f} std={tt_std:.3f} "
               "(the natural spread among training scenes)", ""]
+    if len(fams) >= 1:
+        lines += [f"**Family blocks** (sliced-Wasserstein, **same-scene pairs excluded**"
+                  f"{'; --explode: each segment = its own group' if args.explode else ''}):",
+                  "", "| block | mean | std | n_pairs |", "|---|---|---|---|"]
+        for key, (m, s, n) in blocks.items():
+            lines.append(f"| {key} | {m:.3f} | {s:.3f} | {n} |")
+        lines += ["",
+                  "_Compare an *-internal block to the cross block: if a family's "
+                  "internal distance ≪ the cross distance, that family is the tighter "
+                  "cluster. Same-scene pairs are excluded so pooling vs per-segment is fair._",
+                  ""]
     if te:
         lines += ["**Are the test scenes inside the training distribution?**", "",
                   "| test scene | mean dist→train | nearest train | z vs train-baseline |",
