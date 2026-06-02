@@ -12,6 +12,12 @@
 - **务必记录时间/结果**：脚本都写 `*_times.json` / `*_results.{json,md}`。
 - 多行命令易因续行 `\` 后空行而断 → 给用户命令**写成单行**。
 
+## 0.4 ⚠️⚠️ 已修的严重BUG：test.txt 竞争（2026-06）
+- **现象**：并发跑的 Waymo 实验（4a 帧留出 / 4b 相机留出 / T扫描）共用同一个 `sparse/0/test.txt`，互相覆盖 → **所有 Waymo 5相机结果污染无效**（铁证:4a==4b 数值雷同 26.32）。
+- **修复**：`scene_source(scene, tag)` 现在把 sparse 模型**复制**到 per-out_dir 的 `_gsnet_src_<tag>`（test.txt 隔离），图像仍 symlink。waymo_sse 传 tag=out_dir全路径。
+- **作废**：runs/waymo5_sse, runs/waymo5_cse, runs/Tsweep_waymo_cse/sse。**需重跑**(waymo5_sse_v2/cse_v2)。
+- **仍有效**：3相机 waymo_sse_geom(+0.06)/sparse(-0.67)(单进程跑的)；**CARLA T扫描有效**(同一确定性划分):T3=23.20/T5=24.58/T8=23.29/T12=23.86/T16=24.38 → **T=5最好,更大T无稳定增益("猛密化"无效)**。
+
 ## 0.5 当前状态 & 下一步（最重要）
 - **最终 Ours（CARLA）已定：`geom:tanh:0.1:10:1 @ M=3`**，ckpt=`runs/final_m3/model/geom_tanh_wr0.1_wp10_ws1/gsnet_latest.pt`。CARLA 主表：基线 24.67 → Ours ~25-26（方差±0.5-0.9，单次不可信）。
 - **⚠️ 方差大**：基线 3DGS 确定性(safe_state固定种子)→基线可靠；GS-Net 训练随机→下游 PSNR ±0.5-0.9dB。结论看趋势、>0.8dB 才算真涨。
