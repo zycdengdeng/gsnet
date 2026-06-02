@@ -12,6 +12,11 @@
 - **务必记录时间/结果**：脚本都写 `*_times.json` / `*_results.{json,md}`。
 - 多行命令易因续行 `\` 后空行而断 → 给用户命令**写成单行**。
 
+## 0.3 ⭐ 正向信号 + 又一个BUG（2026-06）
+- **SSE T扫描(有效,走scene_source正确内参)**：T3=**28.40**/T5=26.58/T8=26.66/T12=26.26/T16=26.72。**T=3 比 T=5 高+1.8,且很可能>基线~26.4** → **GS-Net 在真实 Waymo SSE 用小 T 可能起效**(首个真实数据正向信号)。机制:真实SfM已好,T=5过密/过拟合,小T少加只精修反而好——**真实数据上"少密化"才对(与论文/直觉相反)**。待确认:干净两场景基线(waymo5_sse_v3)+小T扫描{1,2,3,5,8}(Tsweep_waymo_sse2)。
+- **⚠️BUG2(已修)**：`build_subset_source` 之前把所有相机塞成同一内参；Waymo 5相机内参不同 → FL+FR→FRONT(`waymo5_flfr2front`)+其T扫描 ~12dB崩坏作废。已修(保留 per-camera 内参),重跑 `waymo5_flfr2front_v2`。
+- **作废**:waymo5_flfr2front, Tsweep_waymo_flfr2front。**有效**:waymo5_sse_v2(1027:base26.42/gsnetT5 25.45), Tsweep_waymo_sse。
+
 ## 0.4 ⚠️⚠️ 已修的严重BUG：test.txt 竞争（2026-06）
 - **现象**：并发跑的 Waymo 实验（4a 帧留出 / 4b 相机留出 / T扫描）共用同一个 `sparse/0/test.txt`，互相覆盖 → **所有 Waymo 5相机结果污染无效**（铁证:4a==4b 数值雷同 26.32）。
 - **修复**：`scene_source(scene, tag)` 现在把 sparse 模型**复制**到 per-out_dir 的 `_gsnet_src_<tag>`（test.txt 隔离），图像仍 symlink。waymo_sse 传 tag=out_dir全路径。
