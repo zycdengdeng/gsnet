@@ -84,6 +84,8 @@ def one_T(T, args, gpu):
                "--skip_baseline", "--iterations", str(args.iterations), "--gpus", str(gpu)]
         if args.target_cams:
             cmd += ["--target_cams", *args.target_cams]
+        if args.source_cams:
+            cmd += ["--source_cams", *args.source_cams]
         run(cmd, gpu)
         results = os.path.join(sse, "sse_results.json")
     g = json.load(open(results))["averages"]["gsnet"]
@@ -102,6 +104,7 @@ def main():
     ap.add_argument("--gdense_dir")
     ap.add_argument("--test_scenes", nargs="+", default=[])
     ap.add_argument("--target_cams", nargs="+", default=[])
+    ap.add_argument("--source_cams", nargs="+", default=[])
     # common
     ap.add_argument("--out_dir", default="runs/Tsweep")
     ap.add_argument("--Ts", type=int, nargs="+", default=[3, 5, 8, 12, 16])
