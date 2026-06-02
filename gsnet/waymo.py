@@ -120,15 +120,20 @@ def build_subset_source(scene_path, keep_cams, tag):
     except Exception:
         extr = read_extrinsics_text(os.path.join(sp0, "images.txt"))
         intr = read_intrinsics_text(os.path.join(sp0, "cameras.txt"))
-    cam = list(intr.values())[0]
-    p = list(cam.params)
-    fx, fy, cx, cy = (p[0], p[1], p[2], p[3]) if cam.model == "PINHOLE" else (p[0], p[0], p[1], p[2])
+    cam0 = list(intr.values())[0]
 
     src = os.path.join(scene_path, "colmap", "_gsnet_src" + (f"_{tag}" if tag else ""))
     dst0 = os.path.join(src, "sparse", "0")
     os.makedirs(dst0, exist_ok=True)
+    # cameras.txt: ALL cameras as PINHOLE, preserving per-camera intrinsics
+    # (Waymo's 5 cameras have DIFFERENT intrinsics -- must NOT collapse to one).
     with open(os.path.join(dst0, "cameras.txt"), "w") as f:
-        f.write(f"# Camera list\n1 PINHOLE {cam.width} {cam.height} {fx} {fy} {cx} {cy}\n")
+        f.write("# Camera list\n")
+        for cid, c in sorted(intr.items()):
+            p = list(c.params)
+            fx, fy, cx, cy = ((p[0], p[1], p[2], p[3]) if c.model == "PINHOLE"
+                              else (p[0], p[0], p[1], p[2]))
+            f.write(f"{cid} PINHOLE {c.width} {c.height} {fx} {fy} {cx} {cy}\n")
     keep = set(keep_cams)
     lines, iid = ["# Image list"], 0
     for k in sorted(extr, key=lambda x: extr[x].name):
@@ -136,7 +141,8 @@ def build_subset_source(scene_path, keep_cams, tag):
         if os.path.dirname(im.name) in keep:
             iid += 1
             q, t = im.qvec, im.tvec
-            lines.append(f"{iid} {q[0]} {q[1]} {q[2]} {q[3]} {t[0]} {t[1]} {t[2]} 1 {im.name}")
+            lines.append(f"{iid} {q[0]} {q[1]} {q[2]} {q[3]} {t[0]} {t[1]} {t[2]} "
+                         f"{im.camera_id} {im.name}")
             lines.append("")
     with open(os.path.join(dst0, "images.txt"), "w") as f:
         f.write("\n".join(lines) + "\n")
