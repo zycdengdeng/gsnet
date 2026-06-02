@@ -1,7 +1,7 @@
 # GS-Net 项目状态与交接文档 (PROJECT STATE)
 
 > **用途**：记忆压缩后的"续命"文档。读完即可完整理解任务/数据/代码/流程/结果/当前路径，性能不退化。
-> **最后更新**：2026-05-30（最终收尾 + 多种子方差研究阶段）
+> **最后更新**：2026-06-02（稀疏化证伪 + T3降级 + 相似度诊断 + within-scene方案敲定；见 §0.2）
 > **分支**：`claude/festive-feynman-80Vw3`（push 到此；用户服务器 `git pull`）
 
 ---
@@ -12,8 +12,27 @@
 - **务必记录时间/结果**：脚本都写 `*_times.json` / `*_results.{json,md}`。
 - 多行命令易因续行 `\` 后空行而断 → 给用户命令**写成单行**。
 
-## 0.3 ⭐ 正向信号 + 又一个BUG（2026-06）
-- **SSE T扫描(有效,走scene_source正确内参)**：T3=**28.40**/T5=26.58/T8=26.66/T12=26.26/T16=26.72。**T=3 比 T=5 高+1.8,且很可能>基线~26.4** → **GS-Net 在真实 Waymo SSE 用小 T 可能起效**(首个真实数据正向信号)。机制:真实SfM已好,T=5过密/过拟合,小T少加只精修反而好——**真实数据上"少密化"才对(与论文/直觉相反)**。待确认:干净两场景基线(waymo5_sse_v3)+小T扫描{1,2,3,5,8}(Tsweep_waymo_sse2)。
+## 0.2 ⭐⭐ 本会话关键结论（2026-06-02，必读；修正了几条旧结论）
+- **Waymo SSE 稀疏度 sweep 跑完**（T=5, ckpt `waymo5_gsnet`, 跨场景2测试场景, `runs/waymo5_sparsity/sparsity_sweep.md`）：
+
+  | n_holdout | train/cam | base | gsnet | Δ |
+  |---|---|---|---|---|
+  | 4 | 16 | 27.43 | 26.52 | **−0.91** |
+  | 12 | 8 | 23.46 | 21.05 | **−2.41** |
+  | 16 | 4 | 19.06 | 17.15 | **−1.91** |
+  | 18 | 2 | 16.31 | 14.98 | **−1.33** |
+
+  → **GS-Net 每个密度都掉分，越稀疏越惨（中段−2.41最狠）。这把 §7.8/7.9 的核心赌注"把SfM弄稀疏→GS-Net起效"彻底证伪。稀疏化这条路死，别再投算力。**
+- **⚠️ 修正 §0.3：T3=28.40 不可信，降级为"未复现孤点"**。它出自撞上 §0.4 test.txt 竞争 bug 的那批 T 扫描；当时自己就标了"待确认(waymo5_sse_v3/Tsweep_waymo_sse2)"但**从未复现**。旁证：sparsity sweep 的 nh=4 基线=**27.43**，而 28.40 那批引用的基线~**26.4**，光基线就飘~1dB；叠加 ±0.5–0.9 噪声，"+2" 极可能是噪声+基线漂移拼出来的假象。**不能再当"首个正向信号"引用。**
+- **机制综合（自洽，不打脸小T方向）**：GS-Net 真实数据上的伤害=**过度密化**；稀疏(少视角)让过度密化更致命；**解药是"少密化"(小T)，不是"多稀疏"**。与 CARLA T 扫描(T=5最好、更大T无增益)同向。注意：这是"机制方向"，**不等于** T3=28.40 那个具体数可信。
+- **新诊断 `scene_similarity.py`（已 push）**：在 GS-Net 归一化特征空间量 10 场景两两分布距离 + 测试场景是否离群(z>2)。**待用户跑** → `runs/scene_similarity/{heatmap,embedding}.png + summary.md`。据图定"是否值得在 8/2 上较真"。
+- **下一步优先级**：① scene_similarity（跑中）→ ② Waymo 跨场景**多 seed**(8/2, 顺带扫小T+用干净多seed复现/证伪T3, mean±std) → ③ CARLA LOSO（`run_carla_loso.py` 已存在但**仍未跑**）→ ④ Waymo within-scene。
+- **within-scene 方案敲定**：复用现有 000–019 fronts（已在 `waymo5_gsnet` 训练里=GS-Net已"见过"这些场景），**只需新跑 3 个训练场景的 back = frames 020–039**；back **只要 SfM+去畸变PINHOLE，免 MVS**（纯测试不进训练corr；`waymo_sse` 只读 sparse/0+images，baseline走SfM点、gsnet走infer(sparse points)）；back 目录名沿用 front 的 ID 便于配对；3 个场景从**8个训练场景**里挑(不要10275/15868测试场景)。
+- **帧数：用 20 不用 10**。理由：(a) §7.9 已证 10帧≠点稀疏=少视角过参数化=GS-Net受害区；(b) CARLA的"10"≠Waymo的"10"，真正密度杠杆是相机几何不是帧数；(c) within-Waymo 是只改"协议"的 A/B，要 20 才和现有跨场景结果对齐、训练corr同密度。
+- **within-scene A/B**：快版(用现 ckpt) vs **干净版(再训一个排除这3场景的GS-Net，约1hr，无需新COLMAP，两模型测同一批back)**，推荐干净版以排除"挑的场景刚好好测"confound。
+
+## 0.3 ⭐ 正向信号 + 又一个BUG（2026-06）（⚠️本节T3结论已被 §0.2 推翻）
+- ~~**SSE T扫描**：T3=**28.40**/T5=26.58/T8=26.66/T12=26.26/T16=26.72，"T3 比 T5 高+1.8、首个真实数据正向信号"~~ → **⚠️ 2026-06-02 推翻（见 §0.2）：此数出自撞 §0.4 test.txt bug 的批次、从未复现、基线本身飘~1dB，属噪声/孤点，不可信。** 仍保留的只有"机制方向"：真实数据上小T(少密化)可能优于大T(过密)，但**需干净多seed重测才算数**。
 - **⚠️BUG2(已修)**：`build_subset_source` 之前把所有相机塞成同一内参；Waymo 5相机内参不同 → FL+FR→FRONT(`waymo5_flfr2front`)+其T扫描 ~12dB崩坏作废。已修(保留 per-camera 内参),重跑 `waymo5_flfr2front_v2`。
 - **作废**:waymo5_flfr2front, Tsweep_waymo_flfr2front。**有效**:waymo5_sse_v2(1027:base26.42/gsnetT5 25.45), Tsweep_waymo_sse。
 
@@ -23,7 +42,7 @@
 - **作废**：runs/waymo5_sse, runs/waymo5_cse, runs/Tsweep_waymo_cse/sse。**需重跑**(waymo5_sse_v2/cse_v2)。
 - **仍有效**：3相机 waymo_sse_geom(+0.06)/sparse(-0.67)(单进程跑的)；**CARLA T扫描有效**(同一确定性划分):T3=23.20/T5=24.58/T8=23.29/T12=23.86/T16=24.38 → **T=5最好,更大T无稳定增益("猛密化"无效)**。
 
-## 0.5 当前状态 & 下一步（最重要）
+## 0.5 当前状态 & 下一步（⚠️ 最新进展/优先级见 §0.2，本节为 CARLA 主线背景）
 - **最终 Ours（CARLA）已定：`geom:tanh:0.1:10:1 @ M=3`**，ckpt=`runs/final_m3/model/geom_tanh_wr0.1_wp10_ws1/gsnet_latest.pt`。CARLA 主表：基线 24.67 → Ours ~25-26（方差±0.5-0.9，单次不可信）。
 - **⚠️ 方差大**：基线 3DGS 确定性(safe_state固定种子)→基线可靠；GS-Net 训练随机→下游 PSNR ±0.5-0.9dB。结论看趋势、>0.8dB 才算真涨。
 - **核心未决问题**：GS-Net 在 **Waymo / CSE** 上没起效（CARLA SSE +1.3 有效，但 CARLA CSE≈基线、Waymo 3相机≈基线、Waymo稀疏更差）。诊断=GS-Net 是"锚定式局部密化"，只在"有覆盖空洞+视角够"的 regime 有效；Waymo 前视无空洞。**当前正用 5 相机 Waymo（前视→侧视跨传感器）验证 regime 假设**。
@@ -82,6 +101,9 @@
 | `make_cse_scene.py`/`run_cse.py` | 拼CSE COLMAP模型(60奇训+60偶测,PINHOLE) / CSE评测 |
 | `carla_rig.json` | CARLA rig(半径0.75十二边形,yaw0..330) |
 | `waymo.py`/`waymo_gdense.py`/`waymo_diag.py`/`waymo_corr.py`/`waymo_sse.py` | Waymo 路径/G_dense/诊断/对应/SSE |
+| `run_sparsity_sweep.py` | Waymo SSE 稀疏度sweep(变n_holdout,base vs gsnet)；**结论:稀疏化死路(§0.2)** |
+| `run_carla_loso.py` | CARLA 跨场景 LOSO(对齐Waymo held-out协议)；**未跑(§0.2)** |
+| `scene_similarity.py` | 场景间分布相似度诊断(归一化特征空间;测试场景是否离群z>2)；**待跑(§0.2)** |
 | `inspect_ply.py` | 诊断 ply 字段/尺度/对齐 |
 
 **主仓库改动**：`arguments`(+gsnet_init,init_pcd)、`scene/__init__.py`(分支)、`scene/gaussian_model.py`(+create_from_ply)、`scene/dataset_readers.py`(优先test.txt)。
@@ -126,7 +148,8 @@
 - **(CSE)**：rig 推位姿(不重跑SfM)，自校验亚度；但**GS-Net在CSE≈基线(未复现+1.86)**→ rebuttal 需谨慎：可强调困难外推 + LPIPS、或作为 limitation 讨论。
 - **本窗口不做**：QuickSplat/generalizable对比、NeRF baseline（用户别处）、下游AD任务(R2.7)。
 
-## 7.8 待议想法：Waymo 基线偏高
+## 7.8 ❌ 已证伪（2026-06-02，见 §0.2）：Waymo 基线偏高 / 稀疏化杠杆
+> **结论：这条"把SfM弄稀疏→GS-Net起效"的路已被 sparsity sweep 证伪（每个密度都掉分，越稀疏越惨）。整节留档，勿再投算力。**
 - 假设：Waymo 前视3相机+20帧 覆盖过稠密→SfM/MVS稠密→基线~30近天花板→GS-Net稠密化无用武之地（+高PSNR区增益压缩）。
 - **正确杠杆=让SfM稀疏=减少视角(重跑稀疏COLMAP)**；减初始点无效(3DGS密化会长回来)。GS-Net已训好、稀疏SSE无需重训，只需更少视角的稀疏SfM+图。
 - 方案选项（用户暂未拍板）：①重跑更少帧(6–8/相机,保3相机)COLMAP ②视角数sweep{3,6,12,20} ③加"仅用K训练帧"代理(弱) ④换更少/更宽相机重生成。**等用户指令**。
