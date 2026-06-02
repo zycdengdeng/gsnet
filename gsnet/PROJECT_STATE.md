@@ -30,6 +30,9 @@
 - **within-scene 方案敲定**：复用现有 000–019 fronts（已在 `waymo5_gsnet` 训练里=GS-Net已"见过"这些场景），**只需新跑 3 个训练场景的 back = frames 020–039**；back **只要 SfM+去畸变PINHOLE，免 MVS**（纯测试不进训练corr；`waymo_sse` 只读 sparse/0+images，baseline走SfM点、gsnet走infer(sparse points)）；back 目录名沿用 front 的 ID 便于配对；3 个场景从**8个训练场景**里挑(不要10275/15868测试场景)。
 - **帧数：用 20 不用 10**。理由：(a) §7.9 已证 10帧≠点稀疏=少视角过参数化=GS-Net受害区；(b) CARLA的"10"≠Waymo的"10"，真正密度杠杆是相机几何不是帧数；(c) within-Waymo 是只改"协议"的 A/B，要 20 才和现有跨场景结果对齐、训练corr同密度。
 - **within-scene A/B**：快版(用现 ckpt) vs **干净版(再训一个排除这3场景的GS-Net，约1hr，无需新COLMAP，两模型测同一批back)**，推荐干净版以排除"挑的场景刚好好测"confound。
+- **within-scene back 数据已就绪**（用户跑完SfM，2026-06-02）：`/mnt/zihanw/EmerNeRF/data/waymo/colmap_input_5cam_next20/segment-{12879640240483815315_5852_605, 14004546003548947884_2331_861, 3988957004231180266_5566_500}.../colmap/dense/{sparse/0,images/cam0..4}`，5相机×20帧(图重新编号000–019)，**MVS可有可无(waymo_sse测试用不到)**。⚠️**待确认**：这3个ID的front(原colmap_input_5cam同ID段)确在那8个训练场景里(非10275/15868)→ within-scene才成立。**待写**: within-scene driver(对这3 back跑waymo_sse;干净版另训排除3场景的ckpt)。
+- **相似度脚本已扩 CARLA/联合模式**：`--point_specs LABEL=GLOB`(CARLA一场景=其10段ply,各自归一化再pool)可与`--root`(Waymo)合跑→共享标准化→CARLA vs Waymo 场景离散度**可同轴比较**(单独跑因各自标准化不可比)。
+- **CARLA LOSO 命令**：`python -m gsnet.run_carla_loso --corr_dir CORR/train --io_dir /mnt/zihanw/carla/input_output --sparse_root /mnt/zihanw/carla/sparse_point --out_dir runs/carla_loso --gpus 0 1 2 3 4 5 6 7`(5折留一,~1hr/折训+评测; **轻confound**:LOSO模型只见4/5数据,但80%够,主效应=排除测试场景)。
 
 ## 0.3 ⭐ 正向信号 + 又一个BUG（2026-06）（⚠️本节T3结论已被 §0.2 推翻）
 - ~~**SSE T扫描**：T3=**28.40**/T5=26.58/T8=26.66/T12=26.26/T16=26.72，"T3 比 T5 高+1.8、首个真实数据正向信号"~~ → **⚠️ 2026-06-02 推翻（见 §0.2）：此数出自撞 §0.4 test.txt bug 的批次、从未复现、基线本身飘~1dB，属噪声/孤点，不可信。** 仍保留的只有"机制方向"：真实数据上小T(少密化)可能优于大T(过密)，但**需干净多seed重测才算数**。
