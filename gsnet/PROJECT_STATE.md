@@ -11,6 +11,7 @@
 - 机器：8× A100-80GB。卡 4–7 有时被别人 RL 占（显存够、共卡不崩，但算力时间片共享变慢）；以 `nvidia-smi` 为准。**用户现在常说 8 卡全空、可大并行**。
 - **务必记录时间/结果**：脚本都写 `*_times.json` / `*_results.{json,md}`。
 - 多行命令易因续行 `\` 后空行而断 → 给用户命令**写成单行**。
+- ⭐**用户明确要求：随时主动更新本 md，不要等被提醒**。每出一个结果/结论/决策就即时落档。
 
 ## 0.2 ⭐⭐ 本会话关键结论（2026-06-02，必读；修正了几条旧结论）
 - **Waymo SSE 稀疏度 sweep 跑完**（T=5, ckpt `waymo5_gsnet`, 跨场景2测试场景, `runs/waymo5_sparsity/sparsity_sweep.md`）：
@@ -29,7 +30,10 @@
 - **28.40 污染机制(记牢)**：test.txt 决定 train/test 划分(在 test.txt 里=测试,其余=训练)，且 `train.py` 与 `render.py` **各自现读一次**。并发实验共用同一 test.txt → 训练时按集合A留出(把B喂进训练)，渲染时 test.txt 被覆盖成B → 在**训练过的视角B**上评测 = 数据泄漏式虚高(28.40 vs 真留出~26.4)。铁证=4a==4b 雷同26.32。修复=`scene_source(tag)` 复制私有 test.txt。
 - **新诊断 `scene_similarity.py`（已 push）**：在 GS-Net 归一化特征空间量场景两两分布距离 + 测试场景是否离群(z>2)。
 - **✅ Waymo 相似度结果（2026-06-02）**：train↔train mean=**0.283** std=**0.059**(10场景同质,std仅~20%均值)；测试场景 10275 **z=−0.62**(比平均训练场景更居中)、15868 **z=+0.44**，**两个都牢牢在分布内、非离群**。
-- **✅✅ CARLA+Waymo 联合相似度（2026-06-02, `runs/scene_similarity_joint`）—— 关键量化结论**：滑动Wasserstein块均值 **CARLA内部=0.165 / Waymo内部=0.271 / 跨数据集=0.329**（比值CARLA/Waymo=**0.61**，MMD同向）。→ **CARLA场景同质度远高于Waymo(彼此距离仅~60%)**。机制：LOSO留出的CARLA场景到训练~0.165，而Waymo测试场景到训练~0.27(虽in-distribution但流形本身更宽)→**CARLA"跨场景"其实离训练近得多→迁移更容易**。**区分CARLA赢/Waymo输的很可能是"训练-测试邻近度/流形宽窄",非"合成vs真实"**。⚠️confound:CARLA每场景pool了10段(平均压低组内方差、抬高组间相似)→0.165可能偏小;控制实验=每CARLA段当独立组只算跨场景段对(待做)。⭐**对LOSO的可证伪预测**:若邻近度是主因→CARLA LOSO应仍+正(留出场景离训练近);若LOSO也崩→则是"精确同场景身份"(交给Waymo within裁决)。→ **"跨场景失败=划分不幸/测试场景太不同"被证伪**；跨场景负结果是"真"的(多seed只能加误差棒、救不回正)；"输入分布gap"在Waymo内部不成立(见过一堆几乎一样的场景仍没用)→ 责任更多推向 **regime/机制(前视稠密几何里过度密化有害)**，而非"没见过类似场景"。**缺的参照系=CARLA spread(联合图回答:CARLA是否挤得远比Waymo紧→其'跨场景'≈近乎同场景)**。
+- **✅✅ CARLA+Waymo 联合相似度（2026-06-02, `runs/scene_similarity_joint`）—— 关键量化结论**：滑动Wasserstein块均值 **CARLA内部=0.165 / Waymo内部=0.271 / 跨数据集=0.329**（比值CARLA/Waymo=**0.61**，MMD同向）。→ **CARLA场景同质度远高于Waymo(彼此距离仅~60%)**。机制：LOSO留出的CARLA场景到训练~0.165，而Waymo测试场景到训练~0.27(虽in-distribution但流形本身更宽)→**CARLA"跨场景"其实离训练近得多→迁移更容易**。**区分CARLA赢/Waymo输的很可能是"训练-测试邻近度/流形宽窄",非"合成vs真实"**。⚠️confound:CARLA每场景pool了10段(平均压低组内方差、抬高组间相似)→0.165可能偏小;控制实验=每CARLA段当独立组只算跨场景段对(待做)。⭐**对LOSO的可证伪预测**:若邻近度是主因→CARLA LOSO应仍+正(留出场景离训练近);若LOSO也崩→则是"精确同场景身份"(交给Waymo within裁决)。
+- **逐段控制实验(跑中,2026-06-02)**:`scene_similarity.py` 已加 `--explode`(每CARLA段=独立组,共50CARLA+10Waymo) + 自动块统计(summary.md直接报carla-carla/waymo-waymo/cross,**排除同场景对**),消除"CARLA pool10段→0.165偏小"的confound。产出`runs/scene_similarity_explode`。判读:carla-carla(逐段跨场景)仍≪waymo-waymo→"CARLA更紧"稳;若蹿到接近→0.165是平均假象需收回。**纯CPU,不占卡**。
+- **运行环境(2026-06-02)**:卡3/4/5空,0/1/2部分空余(6/7疑被LOSO占)。within-scene driver已就绪可上空卡;控制实验CPU即可。
+- **当前在跑**:CARLA LOSO(`runs/carla_loso`,待结果) + 逐段控制相似度(CPU)。**待用户跑**:Waymo within-scene(`run_waymo_withinscene`,可上卡3/4/5)。→ **"跨场景失败=划分不幸/测试场景太不同"被证伪**；跨场景负结果是"真"的(多seed只能加误差棒、救不回正)；"输入分布gap"在Waymo内部不成立(见过一堆几乎一样的场景仍没用)→ 责任更多推向 **regime/机制(前视稠密几何里过度密化有害)**，而非"没见过类似场景"。**缺的参照系=CARLA spread(联合图回答:CARLA是否挤得远比Waymo紧→其'跨场景'≈近乎同场景)**。
 - **下一步优先级**：① scene_similarity（跑中）→ ② Waymo 跨场景**多 seed**(8/2, 顺带干净扫 T{1,2,3,5,8} 填 Waymo 最优 T 的空白+证伪 T3, mean±std) → ③ CARLA LOSO（`run_carla_loso.py` 已存在但**仍未跑**）→ ④ Waymo within-scene。
 - **within-scene 方案敲定**：复用现有 000–019 fronts（已在 `waymo5_gsnet` 训练里=GS-Net已"见过"这些场景），**只需新跑 3 个训练场景的 back = frames 020–039**；back **只要 SfM+去畸变PINHOLE，免 MVS**（纯测试不进训练corr；`waymo_sse` 只读 sparse/0+images，baseline走SfM点、gsnet走infer(sparse points)）；back 目录名沿用 front 的 ID 便于配对；3 个场景从**8个训练场景**里挑(不要10275/15868测试场景)。
 - **帧数：用 20 不用 10**。理由：(a) §7.9 已证 10帧≠点稀疏=少视角过参数化=GS-Net受害区；(b) CARLA的"10"≠Waymo的"10"，真正密度杠杆是相机几何不是帧数；(c) within-Waymo 是只改"协议"的 A/B，要 20 才和现有跨场景结果对齐、训练corr同密度。
