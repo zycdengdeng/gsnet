@@ -46,10 +46,13 @@ FEATURE_NAMES = ["x_n", "y_n", "z_n", "r", "g", "b",
                  "linearity", "planarity", "sphericity", "log_density"]
 
 
-def scene_features(scene_path, k=10, max_pts=20000, seed=0):
-    """Per-point 10-D features in the GS-Net-normalized space."""
+def file_features(path, k=10, max_pts=20000, seed=0):
+    """Per-point 10-D features for ONE point file, in the GS-Net-normalized
+    space. Each file is its own coherent SfM, so it is normalized and has its
+    local geometry computed independently (correct for CARLA where each segment
+    is a separate reconstruction)."""
     from scipy.spatial import cKDTree
-    xyz, rgb = read_points_any(sparse_points(scene_path))
+    xyz, rgb = read_points_any(path)
     center, scale = compute_normalization(xyz)
     xyzn = (xyz - center) / scale  # same transform GS-Net trains/infers in
 
@@ -78,8 +81,23 @@ def scene_features(scene_path, k=10, max_pts=20000, seed=0):
     feat = np.column_stack([
         q, rgb[idx], linearity, planarity, sphericity, log_density
     ]).astype(np.float32)
-    return feat, dict(n_points=int(n), used=int(len(idx)),
-                      scale=float(scale), center=center.tolist())
+    return feat, int(n)
+
+
+def group_features(paths, k=10, max_pts=20000, seed=0):
+    """A 'scene/group' = one or more point files. Features are computed PER
+    FILE (each independently normalized) then pooled; the pool is subsampled to
+    max_pts so every group contributes equally."""
+    feats, npts = [], 0
+    for p in paths:
+        f, n = file_features(p, k, max_pts, seed)
+        feats.append(f)
+        npts += n
+    allf = np.vstack(feats)
+    if allf.shape[0] > max_pts:
+        rng = np.random.default_rng(seed)
+        allf = allf[rng.choice(allf.shape[0], max_pts, replace=False)]
+    return allf, dict(n_points=npts, n_files=len(paths), used=int(allf.shape[0]))
 
 
 def sliced_wasserstein(A, B, n_proj=200, seed=0):
@@ -127,11 +145,42 @@ def classical_mds(D, dim=2):
     return V[:, order] * np.sqrt(L)
 
 
+def build_groups(args):
+    """Return list of (label, [point_file_paths]).
+
+    Inputs COMBINE (so CARLA + Waymo can share one run / one standardization,
+    which is required to compare their inter-scene spread on the same axis):
+      --point_specs LABEL=GLOB ...  generic; pools all files matching GLOB per
+                                    LABEL (CARLA: one scene = its 10 segment
+                                    plys). QUOTE each entry so the shell does
+                                    not expand the glob.
+      --scenes DIR ...              explicit Waymo scene dirs (1 file each).
+      --root DIR                    auto-discover Waymo segment-* dirs.
+    """
+    import glob as _glob
+    groups = []
+    for spec in args.point_specs:
+        assert "=" in spec, f"--point_specs entry must be LABEL=GLOB, got {spec}"
+        label, pat = spec.split("=", 1)
+        paths = sorted(_glob.glob(pat))
+        assert paths, f"no files match {pat} (label {label})"
+        groups.append((label, paths))
+    waymo = list(args.scenes) if args.scenes else (
+        discover_scenes(args.root) if args.root else [])
+    for s in waymo:
+        groups.append((seg_name(s), [sparse_points(s)]))
+    assert groups, "no scenes found (give --root, --scenes, or --point_specs)"
+    return groups
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", help="dir containing segment-* scenes")
     ap.add_argument("--scenes", nargs="+", default=[],
                     help="explicit scene dirs (overrides --root discovery)")
+    ap.add_argument("--point_specs", nargs="+", default=[],
+                    help="generic groups: LABEL=GLOB ... (pools files per label; "
+                         "e.g. carla_s1=/mnt/.../sparse_point/S01/*_sparse.ply)")
     ap.add_argument("--test_scenes", nargs="+", default=[],
                     help="names/substrings of held-out test scenes to highlight")
     ap.add_argument("--out_dir", default="runs/scene_similarity")
@@ -140,20 +189,19 @@ def main():
     ap.add_argument("--n_proj", type=int, default=200)
     args = ap.parse_args()
 
-    scenes = args.scenes or discover_scenes(args.root)
-    assert scenes, "no scenes found"
-    names = [seg_name(s) for s in scenes]
+    groups = build_groups(args)
+    names = [g[0] for g in groups]
     is_test = [any(t in nm for t in args.test_scenes) for nm in names]
     os.makedirs(args.out_dir, exist_ok=True)
 
-    # --- per-scene features ---
+    # --- per-group features ---
     feats, meta = [], {}
-    for s, nm in zip(scenes, names):
-        f, info = scene_features(s, args.k, args.max_pts)
+    for nm, paths in groups:
+        f, info = group_features(paths, args.k, args.max_pts)
         feats.append(f)
         meta[nm] = info
-        print(f"[feat] {nm[:28]:28s} pts={info['n_points']:6d} "
-              f"used={info['used']:5d} scale={info['scale']:.2f}", flush=True)
+        print(f"[feat] {nm[:28]:28s} files={info['n_files']:2d} "
+              f"pts={info['n_points']:7d} used={info['used']:5d}", flush=True)
 
     # global standardization so every feature dim weighs comparably
     allf = np.vstack(feats)
@@ -161,7 +209,7 @@ def main():
     feats = [(f - mu) / sd for f in feats]
 
     # --- pairwise distances ---
-    N = len(scenes)
+    N = len(groups)
     SW = np.zeros((N, N))
     MMD = np.zeros((N, N))
     for i in range(N):
