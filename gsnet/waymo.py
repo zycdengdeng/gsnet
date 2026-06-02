@@ -11,6 +11,9 @@
 import glob
 import os
 import shutil
+import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def discover_scenes(root):
@@ -99,6 +102,52 @@ def sparse_points(scene_path):
 def gdense_path(gdense_dir, scene_path, iterations=30000):
     return os.path.join(gdense_dir, seg_name(scene_path), "point_cloud",
                         f"iteration_{iterations}", "point_cloud.ply")
+
+
+def build_subset_source(scene_path, keep_cams, tag):
+    """Build an isolated COLMAP text model containing ONLY images from `keep_cams`
+    (source ∪ target cameras); all other cameras are DROPPED. Used for
+    cross-sensor 'reconstruct from a few cameras -> synthesize another', e.g.
+    keep_cams=['cam1','cam2','cam0'] for FL+FR -> FRONT. Cameras normalized to
+    PINHOLE; all points3D copied as init; images symlinked. Returns source dir."""
+    from scene.colmap_loader import (read_extrinsics_binary, read_extrinsics_text,
+                                     read_intrinsics_binary, read_intrinsics_text)
+    sp0 = sparse_model_dir(scene_path)
+    img = images_dir(scene_path)
+    try:
+        extr = read_extrinsics_binary(os.path.join(sp0, "images.bin"))
+        intr = read_intrinsics_binary(os.path.join(sp0, "cameras.bin"))
+    except Exception:
+        extr = read_extrinsics_text(os.path.join(sp0, "images.txt"))
+        intr = read_intrinsics_text(os.path.join(sp0, "cameras.txt"))
+    cam = list(intr.values())[0]
+    p = list(cam.params)
+    fx, fy, cx, cy = (p[0], p[1], p[2], p[3]) if cam.model == "PINHOLE" else (p[0], p[0], p[1], p[2])
+
+    src = os.path.join(scene_path, "colmap", "_gsnet_src" + (f"_{tag}" if tag else ""))
+    dst0 = os.path.join(src, "sparse", "0")
+    os.makedirs(dst0, exist_ok=True)
+    with open(os.path.join(dst0, "cameras.txt"), "w") as f:
+        f.write(f"# Camera list\n1 PINHOLE {cam.width} {cam.height} {fx} {fy} {cx} {cy}\n")
+    keep = set(keep_cams)
+    lines, iid = ["# Image list"], 0
+    for k in sorted(extr, key=lambda x: extr[x].name):
+        im = extr[k]
+        if os.path.dirname(im.name) in keep:
+            iid += 1
+            q, t = im.qvec, im.tvec
+            lines.append(f"{iid} {q[0]} {q[1]} {q[2]} {q[3]} {t[0]} {t[1]} {t[2]} 1 {im.name}")
+            lines.append("")
+    with open(os.path.join(dst0, "images.txt"), "w") as f:
+        f.write("\n".join(lines) + "\n")
+    for cand in ("points3D.bin", "points3D.txt"):
+        s = os.path.join(sp0, cand)
+        if os.path.exists(s):
+            shutil.copy(s, os.path.join(dst0, cand))
+            break
+    _link(os.path.join(src, "images"), img)
+    print(f"[subset] {src}: kept cameras {sorted(keep)} ({iid} images)")
+    return src
 
 
 def resolve_scene(root, name_or_path):

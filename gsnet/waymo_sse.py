@@ -21,7 +21,8 @@ import sys
 import threading
 import time
 
-from gsnet.waymo import resolve_scene, seg_name, scene_source, sparse_points
+from gsnet.waymo import (resolve_scene, seg_name, scene_source, sparse_points,
+                        build_subset_source)
 from gsnet.make_cam_split import write_cam_split, write_camera_split
 
 PY = sys.executable
@@ -101,6 +102,10 @@ def main():
     ap.add_argument("--target_cams", nargs="+", default=[],
                     help="cross-sensor: hold out these entire cameras as test "
                          "(e.g. cam3 cam4 = side); default = per-camera frame holdout")
+    ap.add_argument("--source_cams", nargs="+", default=[],
+                    help="cross-sensor: ONLY these cameras are training/source; "
+                         "all cameras except source+target are dropped "
+                         "(e.g. --source_cams cam1 cam2 --target_cams cam0 = FL+FR->FRONT)")
     args = ap.parse_args()
 
     # Per-experiment tag isolates the sparse copy + test.txt so concurrent runs
@@ -110,12 +115,20 @@ def main():
     # Write the split up-front (camera-holdout for cross-sensor --target_cams,
     # else per-camera frame holdout for SSE), into each experiment's own copy.
     scenes = [resolve_scene(args.root, s) for s in args.test_scenes]
+    src_by_scene = {}
     for sc in scenes:
-        src = scene_source(sc, tag)
-        if args.target_cams:
+        if args.source_cams:
+            # keep only source+target cameras (drop the rest), test = target
+            src = build_subset_source(sc, list(args.source_cams) + list(args.target_cams), tag)
+            write_camera_split(src, args.target_cams)
+        elif args.target_cams:
+            src = scene_source(sc, tag)
             write_camera_split(src, args.target_cams)
         else:
+            src = scene_source(sc, tag)
             write_cam_split(src, args.n_holdout)
+        src_by_scene[sc] = src
+    args._src_by_scene = src_by_scene
 
     jobs = []
     for sc in scenes:
@@ -138,7 +151,7 @@ def main():
         gpu = gpu_q.get()
         try:
             name = seg_name(scene)
-            source = scene_source(scene, args._tag)
+            source = args._src_by_scene[scene]
             if cfg == "baseline":
                 mp = os.path.join(args.out_dir, name, "baseline")
                 metrics, s = optimize_eval(source, mp, args.iterations, [], gpu)
