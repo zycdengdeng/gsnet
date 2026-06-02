@@ -133,6 +133,8 @@ def main():
                 rows.sort(key=lambda x: x["T"])
                 json.dump(rows, open(os.path.join(args.out_dir, "Tsweep.json"), "w"), indent=2)
             print(f"[done] T={T} PSNR={r['PSNR']:.2f}", flush=True)
+        except Exception as e:
+            print(f"[FAILED] T={T}: {e}", flush=True)  # don't abort the whole sweep
         finally:
             gpu_q.put(gpu)
 
