@@ -10,6 +10,7 @@
 
 import glob
 import os
+import shutil
 
 
 def discover_scenes(root):
@@ -59,15 +60,24 @@ def _link(link_path, target):
         pass  # created concurrently by a sibling worker
 
 
-def scene_source(scene_path):
-    """Return a 3DGS-ready source dir (sparse/0 + images) via symlinks,
-    normalizing any COLMAP layout (dense/sparse, sparse/0, etc.)."""
+def scene_source(scene_path, tag=""):
+    """Return a 3DGS-ready source dir (sparse/0 + images). The sparse model is
+    COPIED (not symlinked) into a per-`tag` dir so each experiment has its OWN
+    test.txt -- concurrent runs with DIFFERENT splits (frame-holdout vs
+    camera-holdout) must NOT share/overwrite test.txt. Images are symlinked
+    (read-only, safe to share). Pass a unique `tag` per experiment (e.g. the
+    out_dir basename)."""
     sp0 = sparse_model_dir(scene_path)
     img = images_dir(scene_path)
     assert sp0 and img, f"missing sparse/images for {scene_path}"
-    src = os.path.join(scene_path, "colmap", "_gsnet_src")
-    os.makedirs(os.path.join(src, "sparse"), exist_ok=True)
-    _link(os.path.join(src, "sparse", "0"), sp0)
+    name = "_gsnet_src" + (f"_{tag}" if tag else "")
+    src = os.path.join(scene_path, "colmap", name)
+    dst0 = os.path.join(src, "sparse", "0")
+    os.makedirs(dst0, exist_ok=True)
+    for fn in os.listdir(sp0):
+        s, d = os.path.join(sp0, fn), os.path.join(dst0, fn)
+        if os.path.isfile(s) and not os.path.exists(d):
+            shutil.copy(s, d)
     _link(os.path.join(src, "images"), img)
     return src
 

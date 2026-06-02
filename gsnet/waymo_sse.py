@@ -21,7 +21,7 @@ import sys
 import threading
 import time
 
-from gsnet.waymo import resolve_scene, seg_name, dense_dir, sparse_points
+from gsnet.waymo import resolve_scene, seg_name, scene_source, sparse_points
 from gsnet.make_cam_split import write_cam_split, write_camera_split
 
 PY = sys.executable
@@ -103,14 +103,19 @@ def main():
                          "(e.g. cam3 cam4 = side); default = per-camera frame holdout")
     args = ap.parse_args()
 
-    # Write the split up-front (shared by both configs): camera-holdout for
-    # cross-sensor (--target_cams) else per-camera frame holdout (SSE).
+    # Per-experiment tag isolates the sparse copy + test.txt so concurrent runs
+    # with different splits don't overwrite each other's test.txt.
+    tag = args.out_dir.strip("/").replace("/", "_")  # globally unique per out_dir
+    args._tag = tag
+    # Write the split up-front (camera-holdout for cross-sensor --target_cams,
+    # else per-camera frame holdout for SSE), into each experiment's own copy.
     scenes = [resolve_scene(args.root, s) for s in args.test_scenes]
     for sc in scenes:
+        src = scene_source(sc, tag)
         if args.target_cams:
-            write_camera_split(dense_dir(sc), args.target_cams)
+            write_camera_split(src, args.target_cams)
         else:
-            write_cam_split(dense_dir(sc), args.n_holdout)
+            write_cam_split(src, args.n_holdout)
 
     jobs = []
     for sc in scenes:
@@ -133,7 +138,7 @@ def main():
         gpu = gpu_q.get()
         try:
             name = seg_name(scene)
-            source = dense_dir(scene)
+            source = scene_source(scene, args._tag)
             if cfg == "baseline":
                 mp = os.path.join(args.out_dir, name, "baseline")
                 metrics, s = optimize_eval(source, mp, args.iterations, [], gpu)
