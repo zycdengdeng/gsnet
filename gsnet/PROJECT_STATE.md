@@ -37,7 +37,17 @@
 - **新排队/可跑(都现成,不用新代码)**：
   - **A. 干净 Waymo 跨场景 T 扫描 {1,2,3,5,8}**：`run_T_sweep --dataset waymo`(每T重建corr→重训→waymo_sse,走隔离test.txt)→`runs/Tsweep_waymo_clean`。**目的:填Waymo最优T空白+正式复现/证伪污染的28.40**(干净管线下T3若不再~28即钉死artifact)。
   - **B. CARLA SSE 多 seed**：`run_multiseed --eval sse --seeds 0-4`→`runs/multiseed_sse/multiseed.md`,给论文主表 SSE mean±std(头条+1.3现为单次±0.5-0.9噪声)。可断点续跑。
-  - 靠后:Waymo within-scene多seed(等单seed方向)、定性图。→ **"跨场景失败=划分不幸/测试场景太不同"被证伪**；跨场景负结果是"真"的(多seed只能加误差棒、救不回正)；"输入分布gap"在Waymo内部不成立(见过一堆几乎一样的场景仍没用)→ 责任更多推向 **regime/机制(前视稠密几何里过度密化有害)**，而非"没见过类似场景"。**缺的参照系=CARLA spread(联合图回答:CARLA是否挤得远比Waymo紧→其'跨场景'≈近乎同场景)**。
+  - 靠后:Waymo within-scene多seed(需加--seeds代码,等单seed方向)、定性图。
+- **🌙 无人值守批次(2026-06-02夜,用户外出,明天收)**——全部铺上,明天一次性收这6份：
+  | 实验 | 结果文件 | 看什么 |
+  |---|---|---|
+  | CARLA LOSO | `runs/carla_loso/loso_results.md` | 2×2右上:跨场景CARLA还+正吗 |
+  | Waymo within-scene | `runs/waymo5_withinscene/withinscene_results.md` | 2×2左下:Δ_seen vs Δ_unseen |
+  | 逐段控制相似度 | `runs/scene_similarity_explode/summary.md` | carla-carla是否仍≪waymo-waymo(块表) |
+  | 干净Waymo T扫描 | `runs/Tsweep_waymo_clean/.../Tsweep.md` | T3是否还~28(埋28.40)+Waymo最优T |
+  | CARLA SSE多seed | `runs/multiseed_sse/multiseed.md` | 主表SSE mean±std |
+  | CARLA CSE多seed | `runs/multiseed_cse/multiseed.md` | CSE mean±std(若cse_scenes在) |
+  收齐后:拼2×2 + 定最终结论(协议邻近度 vs regime) + 给rebuttal写法。**CSE多seed注意**:勿与SSE多seed同out_dir并发(撞车);省算力合并跑等B完再`--eval sse cse`同dir复用ckpt。→ **"跨场景失败=划分不幸/测试场景太不同"被证伪**；跨场景负结果是"真"的(多seed只能加误差棒、救不回正)；"输入分布gap"在Waymo内部不成立(见过一堆几乎一样的场景仍没用)→ 责任更多推向 **regime/机制(前视稠密几何里过度密化有害)**，而非"没见过类似场景"。**缺的参照系=CARLA spread(联合图回答:CARLA是否挤得远比Waymo紧→其'跨场景'≈近乎同场景)**。
 - **下一步优先级**：① scene_similarity（跑中）→ ② Waymo 跨场景**多 seed**(8/2, 顺带干净扫 T{1,2,3,5,8} 填 Waymo 最优 T 的空白+证伪 T3, mean±std) → ③ CARLA LOSO（`run_carla_loso.py` 已存在但**仍未跑**）→ ④ Waymo within-scene。
 - **within-scene 方案敲定**：复用现有 000–019 fronts（已在 `waymo5_gsnet` 训练里=GS-Net已"见过"这些场景），**只需新跑 3 个训练场景的 back = frames 020–039**；back **只要 SfM+去畸变PINHOLE，免 MVS**（纯测试不进训练corr；`waymo_sse` 只读 sparse/0+images，baseline走SfM点、gsnet走infer(sparse points)）；back 目录名沿用 front 的 ID 便于配对；3 个场景从**8个训练场景**里挑(不要10275/15868测试场景)。
 - **帧数：用 20 不用 10**。理由：(a) §7.9 已证 10帧≠点稀疏=少视角过参数化=GS-Net受害区；(b) CARLA的"10"≠Waymo的"10"，真正密度杠杆是相机几何不是帧数；(c) within-Waymo 是只改"协议"的 A/B，要 20 才和现有跨场景结果对齐、训练corr同密度。
