@@ -53,6 +53,7 @@
 ---
 
 ## 0.00 ✅✅✅ 代码已平反 + CARLA 增益坐实（2026-06-03，逐序列多seed证据）
+- **🚪Waymo SSE×densify-off闸门结果(2026-06-03,`runs/waymo5_sse_densifyoff`)**:base26.00/gsnet25.88→**PSNR Δ=−0.12**(densify-on是−0.41,washout效应小);**但LPIPS 0.400→0.356(好11%)、SSIM+0.007**。→**和CARLA/CSE不同:Waymo SSE没有washout可救='init本身无PSNR优势'那支**(同相机帧内插,SfM沿条带本就够密、不密化也能插好,不奖励更好init;呼应共视<10%/within=cross/消融full最优仍负)。**诚实正面:Waymo SSE = PSNR饱和(中性)但感知质量(LPIPS/SSIM)提升**。⇒**预期:图像条件化(更好init)在SSE PSNR也大概率翻不正(regime不奖励init),重点看LPIPS**。**PSNR硬货仍是CARLA SSE+1.69/CSE densify-off+1.28**。
 - **🐞🐞 严重bug(2026-06-03,smoke时发现):waymo_corr test排除失效→Waymo训练污染**。`waymo_corr`用`seg_name(s) not in test`精确匹配,但一直传**短名**(10275..._5755_561)而seg_name是全名→**一个都没排掉→CORR/waymo5含全部10场景(含2测试)→waymo5_gsnet在测试场景上训练过(train-on-test)**。所有Waymo'跨场景'SSE/消融/T扫描标签错(实为见过测试)。**已修(子串匹配)**。⚠️**仅影响Waymo**(CARLA靠数据布局分train/test,不受影响,+1.69稳)。**影响评估**:GS-Net见过测试仍−0.9→'Waymo不起效'结论更强;within seen≈unseen仍成立(污染两边抵消);但点-only Waymo数应用干净8场景corr重跑(结论不变、数字要干净)。**✅已确认CORR/waymo5=8(干净!)**→原corr用全名建的、排除生效→**过去所有Waymo结果无污染、全部有效**(waymo5_gsnet/−0.9/消融/T扫描都训8测2)。bug只咬了这次短名调用(建成10),已修。**仅需:rm CORR/waymo5_img重建(修后应得8)再训图像条件化**。
 - **✅ 剔310重聚合(reaggregate.py)结论:没翻任何rebuttal结论,更干净**(基线excl310=24.56):
   - **CARLA T扫描(`Tsweep_carla`,剔310,2序列110/510)**:T3=26.14/**T5=27.19**/T8=26.11/T12=26.57/T16=26.40→**T5仍最好(Δ≈+1.97),与含310排名一致→最终配方T5@M3稳**。
