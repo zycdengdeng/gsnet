@@ -35,6 +35,9 @@ def train(args):
         pos_offset_scale=args.pos_offset_scale,
         encoder_type=args.encoder_type,
         color_activation=getattr(args, "color_activation", "sigmoid"),
+        predict_color=not args.no_color,
+        predict_opacity=not args.no_opacity,
+        predict_scale_rot=not args.no_scale_rot,
     )
     n_params = sum(p.numel() for p in GSNet(cfg).parameters())
     print(f"[cfg] encoder={cfg.encoder_type}  params={n_params/1e3:.1f}K  "
@@ -138,6 +141,13 @@ def main():
                     choices=["mlp_only", "concat", "edgeconv", "attention",
                              "attention_v2", "geom", "geoedge"])
     ap.add_argument("--color_activation", default="sigmoid", choices=["sigmoid", "tanh"])
+    # Attribute ablation (Table IV / real-data factor study): disable a head ->
+    # it falls back to a fixed default and drops from the loss. e.g.
+    # --no_opacity --no_color --no_scale_rot == pure densification (positions only).
+    ap.add_argument("--no_color", action="store_true", help="don't predict color (use input rgb)")
+    ap.add_argument("--no_opacity", action="store_true", help="don't predict opacity (fixed 0.1)")
+    ap.add_argument("--no_scale_rot", action="store_true",
+                    help="don't predict scale/rotation (fixed isotropic default scale)")
     ap.add_argument("--in_memory", type=int, default=1, help="1=hold data on GPU (fast)")
     ap.add_argument("--seed", type=int, default=None, help="random seed (for multi-seed variance study)")
     ap.add_argument("--num_workers", type=int, default=4)
