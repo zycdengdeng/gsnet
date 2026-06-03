@@ -139,6 +139,8 @@ def main():
         g = gpu_q.get()
         try:
             ckpts[name] = train_variant(name, VARIANTS[name], args, [g])
+        except Exception as e:                       # one bad variant must not abort the batch
+            print(f"[FAILED train] {name}: {e}", flush=True)
         finally:
             gpu_q.put(g)
     with cf.ThreadPoolExecutor(max_workers=len(args.gpus)) as ex:
@@ -152,12 +154,18 @@ def main():
     # Phase 2: GS-Net SSE for missing variants IN PARALLEL (one GPU each).
     lock = threading.Lock()
     def sse_worker(name):
+        ckpt = ckpts.get(name)
+        if not ckpt or not os.path.exists(ckpt):      # train failed/skipped -> no ckpt
+            print(f"[skip sse] {name}: no ckpt (train failed?)", flush=True)
+            return
         g = gpu_q.get()
         try:
-            psnr = sse_gsnet(name, ckpts[name], args, [g])
+            psnr = sse_gsnet(name, ckpt, args, [g])
             with lock:
                 rows[name] = psnr
                 write_table(rows, baseline, args.out_dir)
+        except Exception as e:
+            print(f"[FAILED sse] {name}: {e}", flush=True)
         finally:
             gpu_q.put(g)
     with cf.ThreadPoolExecutor(max_workers=len(args.gpus)) as ex:
