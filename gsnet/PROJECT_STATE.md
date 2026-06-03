@@ -1,7 +1,7 @@
 # GS-Net 项目状态与交接文档 (PROJECT STATE)
 
 > **用途**：记忆压缩后的"续命"文档。读完即可完整理解任务/数据/代码/流程/结果/当前路径，性能不退化。
-> **最后更新**：2026-06-02（稀疏化证伪 + T3降级 + 相似度诊断 + within-scene方案敲定；见 §0.2）
+> **最后更新**：2026-06-03（代码平反/CARLA增益坐实 + regime非协议 + 重心转向"让Waymo转正"；见 §0.000 速览）
 > **分支**：`claude/festive-feynman-80Vw3`（push 到此；用户服务器 `git pull`）
 
 ---
@@ -12,6 +12,32 @@
 - **务必记录时间/结果**：脚本都写 `*_times.json` / `*_results.{json,md}`。
 - 多行命令易因续行 `\` 后空行而断 → 给用户命令**写成单行**。
 - ⭐**用户明确要求：随时主动更新本 md，不要等被提醒**。每出一个结果/结论/决策就即时落档。
+
+## 0.000 🧭 当前真相速览（READ FIRST，2026-06-03）——下面 §0.0~§8 为历史明细，本节为最新口径
+**任务**：GS-Net 论文 rebuttal。GS-Net = 稀疏SfM点→一次前向→稠密3DGS高斯，作即插即用init。核心诉求=**在真实数据(Waymo)上做出可信正增益**，且**不大改网络、不大改行文**。
+
+**✅ 已定论（别再质疑/重测）**
+1. **代码正确、CARLA增益真**：CARLA SSE 多seed=**+1.69±0.38**(排崩坏场景310;含310才被拽成+0.22="+0.28"假象)，≈论文+2.08。densify on/off佐证(+1.72/+2.06)→init本身就好、非washout。端到端审计无bug。
+2. **是 regime 不是协议**：Waymo within≈cross(seen−0.74≈unseen−0.77≈cross−0.90)；CARLA within+1.69≈cross/LOSO+1.30。→ 见没见过场景**不重要**；决定有无效的是**几何regime**。
+3. **GS-Net 的适用域**：只在**覆盖空洞/外推/视角不足**(3DGS自身densify恢复不了的地方)有用=CARLA环视的主场。**Waymo same-sensor帧留出SSE=内插=无洞→GS-Net没空间且过度密化反害(−0.9)**。
+4. **死路别再走**：稀疏化(帧留出)→越稀越害(证伪"弄稀疏就有效")；T3=28.40=test.txt竞争污染的假象(已弃);CSE在CARLA=−0.29(没复现论文+1.86)。
+5. **干净T**：仅CARLA有(T5最好,更大无益);Waymo最优T未知(T扫描重跑中)。
+6. **相似度**：CARLA场景比Waymo紧(逐段0.21 vs 0.32)→解释CARLA跨场景也灵。
+7. **场景310**：所有seed都崩(init正常,优化病理)→诚实排除。**510(−0.49)正常勿丢**。
+
+**🎯 唯一在打的目标 = 让 Waymo 转正（不改网络/行文）**——三杠杆：
+- **L1 去有害成分**：属性消融(`run_waymo_ablation`,跑中)→ no_opacity/dens_only 能否把−0.9拉向正？(假设opacity是真实数据坏/不可迁移因子)
+- **L2 换外推regime测**：别用帧留出SSE(内插)。用**跨传感器(front→side,=论文"异构传感器复用"主旨,需干净重跑waymo5_cse)** 或 **真稀疏视角**(整块无人看→3DGS没梯度→几何先验补位)。
+- **L3 少密化**：小T(T扫描中)。
+- **押注组合 = dens_only/no_opacity × 外推regime**（合成用户两直觉:opacity坏+用稀疏/有洞regime）。
+
+**⏳ 在跑/待贴**：Waymo属性消融(`runs/waymo5_ablation/ablation_results.md`,**最关键**) + 干净Waymo T扫描(`resolve_scene`已修,重跑补SSE)。**已决定不跑**CARLA消融。
+**❓待用户定**：L2先打"跨传感器"还是"少视角"。
+
+**📁 关键路径**：Waymo 5cam=`/mnt/zihanw/EmerNeRF/data/waymo/colmap_input_5cam`(8训/2测=10275,15868;cam0前/1FL/2FR/3SL/4SR);`CORR/waymo5`;ckpt`runs/waymo5_gsnet`(T5);within-scene back=`colmap_input_5cam_next20`。CARLA io=`/mnt/zihanw/carla/input_output`,sparse=`/mnt/zihanw/carla/sparse_point`,`CORR/train`,多seed模型`runs/multiseed_sse/model_s{0-4}`。
+**🔧 近期新增工具**：`run_waymo_ablation`/`run_carla_ablation`(属性消融,6变体,断点续跑) · `train_gsnet --no_color/--no_opacity/--no_scale_rot` · `run_sse --train_extra`(透传如`--densify_until_iter 0`) · `run_waymo_withinscene` · `scene_similarity --explode`+块统计 · `waymo.resolve_scene`支持短名子串匹配。
+
+---
 
 ## 0.00 ✅✅✅ 代码已平反 + CARLA 增益坐实（2026-06-03，逐序列多seed证据）
 - **densify on/off 佐证(`runs/sse_densify_on|off`,3id排310)**:Δ(gsnet−base) ON=+1.72 / OFF=+2.06(110/510)→两regime都稳+1.7~2,增益非washout假象,init本身就好(关密化更少迭代也到位);310两边都崩(−6/−8)=场景病理与密化无关。**'+0.28缩水'担忧彻底关闭。**
