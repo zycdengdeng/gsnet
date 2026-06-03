@@ -40,6 +40,11 @@
 ---
 
 ## 0.00 ✅✅✅ 代码已平反 + CARLA 增益坐实（2026-06-03，逐序列多seed证据）
+- **✅ 剔310重聚合(reaggregate.py)结论:没翻任何rebuttal结论,更干净**(基线excl310=24.56):
+  - **Reviewer A(encoder,`encoder_ablation_final`最终配方tanh0.1:10:1,4序列)**:concat26.65(+2.09)/geom26.51(+1.95)/mlp_only26.40(+1.84)/attention26.33(+1.77)/edgeconv25.37(+0.81)。**顶4打平(差0.32,在噪声内),轻量mlp≈重型geom→'增益来自损失设计非encoder复杂度'成立且更强。用这张替论文encoder表。**
+  - **Reviewer C(`sup_sens`)**:监督迭代5k+0.70/10k+1.07/20k+0.82;密度25%+0.76/10%≈基线/50%≈基线→**优雅降级到≈基线不崩**(单seed略噪)。措辞:监督变差→增益单调收窄→退化到≈基线。
+  - **design/design2/design_attn**:剔310只剩2序列(110,510)太薄,但最终配方已被encoder_ablation_final干净背书→配方选择站得住,**不重跑**。
+  - `encoder_ablation`(默认配方sigmoid)剔310:geom26.51最好(领先~0.8-1.5)=默认配方下encoder有用,与'最终配方打平'两半故事自洽。
 - **⚠️ 旧消融被310污染(2026-06-03发现)**:encoder消融(run_sse默认5序列含310)、design/weight sweep(默认eval_ids 110/310/510,310占1/3)、supervision敏感性——平均里都含310→被拉低。**但逐序列PSNR存于各config的sse_results.json→用`reaggregate.py --exclude 310`重算即可,无需重跑**。重算还能查310是否config相关(若剔310后encoder排名变则原结论需修订;若仍打平则结论不变更干净)。待用户跑重聚合。可选升级:encoder消融多seed。
 - **densify on/off 佐证(`runs/sse_densify_on|off`,3id排310)**:Δ(gsnet−base) ON=+1.72 / OFF=+2.06(110/510)→两regime都稳+1.7~2,增益非washout假象,init本身就好(关密化更少迭代也到位);310两边都崩(−6/−8)=场景病理与密化无关。**'+0.28缩水'担忧彻底关闭。**
 - **多seed逐序列gsnet PSNR(基线)**：110=27.39(25.59)/210=27.97(25.56)/410=23.70(22.23)/510=25.94(24.85)/**310=19.75(25.43)←所有5seed都18-20崩坏**。
