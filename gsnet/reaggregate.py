@@ -57,8 +57,10 @@ def main():
     args = ap.parse_args()
 
     files = sorted(glob.glob(os.path.join(args.root, "**", "sse_results.json"),
-                             recursive=True))
-    assert files, f"no sse_results.json under {args.root}"
+                             recursive=True)
+                   + glob.glob(os.path.join(args.root, "**", "cse_results.json"),
+                               recursive=True))
+    assert files, f"no sse_results.json/cse_results.json under {args.root}"
 
     rows = []
     for f in files:
