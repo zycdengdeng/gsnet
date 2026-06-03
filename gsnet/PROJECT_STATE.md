@@ -24,6 +24,8 @@
 5. **干净T**：仅CARLA有(**剔310确认T5=27.19最好**、更大无益);Waymo最优T未知(T扫描重跑中)。
 6. **相似度**：CARLA场景比Waymo紧(逐段0.21 vs 0.32)→解释CARLA跨场景也灵。
 7. **场景310**：所有seed都崩(init正常,优化病理)→诚实排除。**510(−0.49)正常勿丢**。
+8. **310清算完成(reaggregate.py剔310)**：所有rebuttal结论剔310后**都成立且更干净、无需重跑**——Reviewer A(encoder最终配方顶4打平+1.8~2.1)、Reviewer C(优雅降级)、最终配方T5@M3(T5=27.19最好)、主表SSE+1.69。详见§0.00。
+9. **CSE诊断修正**：CARLA CSE是12环视奇→偶差30°、几何大多已观测,**非"无观测无解"**;+0.02的真因更可能是floater+washout(好init被源视角密化磨掉)。**当前在试 CSE×densify-off**(`run_cse --train_extra "--densify_until_iter 0"`)看能否露出真增益。
 
 **🎯 唯一在打的目标 = 让 Waymo 转正（不改网络/行文）**——三杠杆：
 - **L1 去有害成分**：属性消融(`run_waymo_ablation`,跑中)→ no_opacity/dens_only 能否把−0.9拉向正？(假设opacity是真实数据坏/不可迁移因子)
@@ -31,7 +33,7 @@
 - **L3 少密化**：小T(T扫描中)。
 - **押注组合 = dens_only/no_opacity × 外推regime**（合成用户两直觉:opacity坏+用稀疏/有洞regime）。
 
-**⏳ 在跑/待贴**：Waymo属性消融(`runs/waymo5_ablation/ablation_results.md`,**最关键**) + 干净Waymo T扫描(`resolve_scene`已修,重跑补SSE)。**已决定不跑**CARLA消融。
+**⏳ 当前状态(2026-06-03晚)**：Waymo属性消融**并行重跑中**(`runs/waymo5_ablation/ablation_results.md`,**最关键**,6变体含xyz_rgb,8卡)。**待用户跑/贴**:① Waymo消融表 ② **CSE×densify-off**(`runs/cse_densify_off`,验washout) ③ 干净Waymo T扫描(`resolve_scene`已修,重跑补SSE)。**已决定不跑**CARLA消融。
 **🔔 待办触发器(用户贴第一波消融结果时,必须主动提醒)**：① **infer已加distCUDA2 std-init scale fix(只影响no_scale_rot/xyz_rgb/dens_only)**→让用户`rm -rf runs/waymo5_ablation/{no_scale_rot,xyz_rgb,dens_only}/sse`+git pull+重跑同命令(跳训练只重评),得**公平的纯密化数**;② 据结果按需加`--no_rot`(拆scale/rot单独砍旋转,rot是已知噪声地板)、`geom_only`(xyz+scale_rot)、`xyz_opacity`组合(用户已同意第一波后做)。
 **❓待用户定**：L2先打"跨传感器"还是"少视角"。
 
@@ -60,13 +62,13 @@
 ## 0.0 ⭐ 代码审计 + "增益缩水"诊断（2026-06-03，用户怀疑重建代码有错）
 - **背景**：用户原版 GS-Net 在 CARLA SSE 给论文级增益(+2.08);本重建多seed只+0.28。用户疑"预测参数没正确替进3DGS/学错了"。
 - **端到端审计(infer→io→model→build_correspondences→losses→scene/__init__→gaussian_model)结论：未发现替换/学习的硬bug**。预测参数正确转3DGS约定(RGB→SH、scale→log、opacity→inverse_sigmoid、quat wxyz)写盘;`create_from_ply`正确加载并`active_sh_degree=0`;baseline走`create_from_pcd`(SfM稀疏点),与gsnet**只差init**,公平;pseudo-GT归一化/裁剪(scale→/scene_scale,clip(1e-6,0.999))与模型σ∈(0,1)同空间一致;损失pos用delta、scale同空间、opacity用max(α,0)对齐。**机制是对的。**
-- **最可能真因(非bug)=30k自适应densification抹平init优势**：densify_until_iter默认15000→baseline稀疏init靠densification一路加点追上→30k趋同→gap只剩+0.28。GS-Net的init价值被3DGS自带密化掩盖。
+- ~~**最可能真因=30k densification抹平init**~~ **⛔此假设已被推翻(见§0.00)**:真因是**场景310崩坏**拖低5序列均值;densify on/off证明增益是真的(+1.72/+2.06)、剔310=+1.69。(washout效应存在但很小,非主因。)
 - **诊断(已加`run_sse --train_extra`透传)**：关掉densification(`--densify_until_iter 0`)再比baseline vs gsnet。若gsnet≫baseline=washout证实(init真有用,价值在"免密化/快收敛",可正面重写故事);若仍≈=init本身弱(再查G_dense质量/T-to-K任意配对/损失权重)。命令见下方对话。**结果出来更新此处**。
 
 ## 0.1 ⭐⭐⭐ 决定性结果（2026-06-03，必读，改写结论）
 - **🎯 是 regime 不是协议（Waymo within-scene 裁决,`runs/waymo5_withinscene`）**：Δ_seen=**−0.74** ≈ Δ_unseen=**−0.77**（逐场景:12879 +1.15/+0.98、14004 −0.87/−0.77、3988 −2.51/−2.51）。**GS-Net 见没见过该场景对结果无影响** → 跨场景−0.9≈同场景−0.75。**"协议/同场景身份/分布邻近度"解释在 Waymo 被证伪**；救不了它的是**几何 regime（前视稠密→过度密化有害）**，与熟悉度无关。这是最干净的因果结论。
 - **🔄🔄 重大修正：CARLA "+0.28 缩水" 很可能是 310 崩坏拖累的假象（2026-06-03晚）**。CARLA LOSO 重跑(`runs/carla_loso`)：110+1.83/210+2.67/410+1.18/510−0.49/**310 gsnet=19.04(−6.39,崩坏退化非"有害")**。**排除崩坏310,其余4个 Δ=+1.30** → CARLA**跨场景**GS-Net仍+1.3(印证相似度预测:CARLA场景紧→跨场景照样有效,2×2右上=正)。**推论**:多seed的+0.28(5序列含310)极可能也被310拽下→**CARLA真实SSE增益≈+1.3不是+0.28,用户"原版=论文效果"可能对、是我被310误导**。**待验证**:多seed逐序列PSNR(看310是否各seed都崩)→确认后排除310重算。**310为何反复崩待查**(infer退化init?优化发散?)。
-- **CARLA CSE 多 seed（`runs/multiseed_cse`）**：=**19.37±0.07**,基线19.66 → **稳定 −0.29**(方差极小)。CSE=可靠轻微负,非≈基线。
+- ~~**CARLA CSE 多 seed**：19.37±0.07,基线19.66→−0.29~~ **⛔已被§0.00取代**:那是**含310**的;剔310后 CSE=**19.67±0.06,基线19.65→≈+0.02(中性)**,非负。
 - **诚实定调(更新)**：GS-Net 增益=**regime依赖**——CARLA SSE(有覆盖空洞)**≈+1.3(排310)**、within≈cross(CARLA场景紧);CSE−0.29、Waymo−0.8(within≈cross,熟悉度无关)。即**相机几何/regime决定有无效,within-vs-cross两数据集上都不重要**;相似度解释CARLA跨场景为何仍灵(场景紧)。
 - **✅ 相似度控制扛住pooling（`runs/scene_similarity_explode`）**：逐段+排同场景后 carla-carla **0.211** < waymo-waymo **0.318**(比值0.66,与pool版0.61一致),cross0.356。"CARLA更同质"为真。⚠️该run的test-z(15868 z=+2.39)不可信(train基线被50CARLA段主导);Waymo内是否离群以纯Waymo那次(z=+0.44,in-dist)为准。
 - **两个重跑进展(2026-06-03晚)**：CARLA LOSO **已重跑成功**(见上,跨场景+1.3排310);干净Waymo T扫描挂在**场景名解析**(传短名,`resolve_scene`只精确拼接)**非OOM**——T1/T5模型已训好,**已修`resolve_scene`支持子串匹配**,重跑只补SSE。
