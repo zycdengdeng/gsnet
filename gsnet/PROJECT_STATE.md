@@ -16,6 +16,14 @@
 ## 0.000 🧭 当前真相速览（READ FIRST，2026-06-03）——下面 §0.0~§8 为历史明细，本节为最新口径
 **任务**：GS-Net 论文 rebuttal。GS-Net = 稀疏SfM点→一次前向→稠密3DGS高斯，作即插即用init。核心诉求=**在真实数据(Waymo)上做出可信正增益**，且**不大改网络、不大改行文**。
 
+**💎 当前总账（FINAL 口径，2026-06-03；下面为推导细节）**
+- **PSNR 正结果(可写主表)**：CARLA SSE **+1.69±0.38**(排崩坏场景310,复现论文+2.08)；CARLA CSE **+1.98**(densify_until_iter=2000甜点；densify-off +1.28 / 默认 +0.02——baseline靠满密化追平)。
+- **Waymo SSE = PSNR 饱和、翻不正**：所有杠杆都失败(within≈cross −0.74 / densify-off −0.12 / 图像条件化 −0.50 / T全负 / 砍属性全负)→ **regime决定,非数据量/泛化/调参**。根因:Waymo 5相机共视 **<10%** = 不相交前向条带 = 无覆盖洞;CARLA环视高共视 = 有洞 = GS-Net主场。
+- **机制(一句话)**：GS-Net = 局部稠密化先验,只在"SfM不足 + 3DGS自带密化补不回"的**覆盖洞/外推regime**有用。
+- **诚实定位(rebuttal主线)**：用 inter-camera 覆盖度刻画适用域(重叠/环视rig有效=CARLA SSE+1.69/CSE+1.98;宽基线disjoint同传感器=Waymo中性)。Reviewer A(encoder打平、轻量够)/C(优雅降级)都成立(排310)。
+- **已澄清/埋葬**：28.40=test.txt污染(干净T3=26.70);场景310=优化病理(排除);CORR/waymo5=8干净(过去Waymo结果有效);端到端审计无bug。
+- **🎯进行中(Waymo最后一枪)**：稀疏宽基线×30场景(8帧每隔4抽,25训/5测)→造真实覆盖洞打GS-Net主场;Δ转正=Waymo赢,仍负=定死走覆盖度框架。**+CSE甜点(densify2000)多seed待跑**(钉死+2.0误差棒)。
+
 **✅ 已定论（别再质疑/重测）**
 1. **代码正确、CARLA增益真**：CARLA SSE 多seed=**+1.69±0.38**(排崩坏场景310;含310才被拽成+0.22="+0.28"假象)，≈论文+2.08。densify on/off佐证(+1.72/+2.06)→init本身就好、非washout。端到端审计无bug。
 2. **是 regime 不是协议**：Waymo within≈cross(seen−0.74≈unseen−0.77≈cross−0.90)；CARLA within+1.69≈cross/LOSO+1.30。→ 见没见过场景**不重要**；决定有无效的是**几何regime**。
