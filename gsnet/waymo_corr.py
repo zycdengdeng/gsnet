@@ -44,10 +44,14 @@ def main():
                     help="bake per-point image features into corr (image-conditioned GS-Net)")
     args = ap.parse_args()
 
-    test = set(args.test_scenes)
-    scenes = [s for s in discover_scenes(args.root) if seg_name(s) not in test]
+    # Exclude test scenes by SUBSTRING (so short ids like "10275..._5755_561"
+    # match the full "segment-10275..._5775_561_with_camera_labels" dir name).
+    def _is_test(name):
+        return any(t in name for t in args.test_scenes)
+    scenes = [s for s in discover_scenes(args.root) if not _is_test(seg_name(s))]
+    excluded = [seg_name(s) for s in discover_scenes(args.root) if _is_test(seg_name(s))]
     print(f"[waymo_corr] {len(scenes)} training scenes "
-          f"(excluded {len(test)} test): {[seg_name(s) for s in scenes]}")
+          f"(excluded {len(excluded)}: {excluded})")
 
     common = dict(K=args.K, M=args.M, normalize=not args.no_normalize,
                   radius_margin=args.radius_margin, opacity_min=args.opacity_min,
