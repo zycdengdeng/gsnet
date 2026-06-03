@@ -68,7 +68,8 @@ def optimize_and_eval(source, model_path, iterations, extra_args, gpu):
 def job_baseline(sid, args, gpu):
     base = os.path.join(args.io_dir, f"{sid}_base")
     mp = os.path.join(args.out_dir, sid, "baseline")
-    metrics, optim_s = optimize_and_eval(base, mp, args.iterations, [], gpu)
+    metrics, optim_s = optimize_and_eval(base, mp, args.iterations,
+                                         list(args.train_extra), gpu)
     return {**metrics, "optim_seconds": optim_s, "total_seconds": optim_s}
 
 
@@ -82,7 +83,7 @@ def job_gsnet(sid, args, gpu):
     infer_s = run([PY, "-m", "gsnet.infer", "--ckpt", args.ckpt,
                    "--sparse", sparse_ply, "--out", init_ply], gpu=gpu)
     metrics, optim_s = optimize_and_eval(
-        base, mp, args.iterations, ["--gsnet_init", init_ply], gpu)
+        base, mp, args.iterations, ["--gsnet_init", init_ply, *args.train_extra], gpu)
     return {**metrics, "infer_seconds": infer_s, "optim_seconds": optim_s,
             "total_seconds": infer_s + optim_s}
 
@@ -140,7 +141,12 @@ def main():
     ap.add_argument("--holdout", type=int, nargs="+", default=[4, 9])
     ap.add_argument("--skip_baseline", action="store_true")
     ap.add_argument("--skip_gsnet", action="store_true")
+    ap.add_argument("--train_extra", default="",
+                    help="extra args passed verbatim to train.py for BOTH baseline "
+                         "and gsnet, e.g. \"--densify_until_iter 0\" (turns off "
+                         "adaptive densification -> isolates the init's value)")
     args = ap.parse_args()
+    args.train_extra = args.train_extra.split()
 
     # Validate inputs and write SSE splits up-front (avoids concurrent writes).
     from gsnet.make_sse_split import write_split
