@@ -38,6 +38,7 @@ from gsnet.common import (
 
 def build_for_sequence(sparse_path, gdense_path, out_path, K=5, M=3,
                        normalize=True, subsample=1.0, input_subsample=1.0,
+                       image_feats_dir=None,
                        **filt_kwargs):
     t0 = time.time()
     cxyz, crgb = read_points_any(sparse_path)
@@ -104,6 +105,16 @@ def build_for_sequence(sparse_path, gdense_path, out_path, K=5, M=3,
         norm_center=center.astype(np.float32),
         norm_scale=np.float32(scale),
     )
+    # Image-conditioning: per-point image features (aligned to read_points_any
+    # order). Requires no input subsampling (alignment).
+    if image_feats_dir:
+        assert input_subsample >= 1.0, "image feats incompatible with input_subsample<1"
+        from gsnet.image_feats import compute_point_image_feats
+        sparse_dir = os.path.dirname(sparse_path)
+        feats = compute_point_image_feats(sparse_dir, image_feats_dir)  # (N, F)
+        assert feats.shape[0] == N, f"feat/point mismatch {feats.shape[0]} vs {N}"
+        out["center_img"] = feats.astype(np.float32)
+        out["neighbor_img"] = feats[nn_idx].astype(np.float32)
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     np.savez_compressed(out_path, **out)
     dt = time.time() - t0

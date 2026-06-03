@@ -22,7 +22,7 @@ import threading
 import time
 
 from gsnet.waymo import (resolve_scene, seg_name, scene_source, sparse_points,
-                        build_subset_source)
+                        build_subset_source, images_dir)
 from gsnet.make_cam_split import write_cam_split, write_camera_split
 
 PY = sys.executable
@@ -110,6 +110,8 @@ def main():
                     help="extra args to train.py for BOTH cfgs, e.g. "
                          "\"--densify_until_iter 0\" (preserve GS-Net's view-consistent "
                          "init from source-view densification washout)")
+    ap.add_argument("--image_feats", action="store_true",
+                    help="pass --image_feats <images_dir> to infer (for image-conditioned models)")
     args = ap.parse_args()
     args.train_extra = args.train_extra.split()
 
@@ -166,8 +168,11 @@ def main():
                 mp = os.path.join(args.out_dir, name, "gsnet")
                 os.makedirs(mp, exist_ok=True)
                 init_ply = os.path.join(mp, "gsnet_init.ply")
-                infer_s = run([PY, "-m", "gsnet.infer", "--ckpt", args.ckpt,
-                               "--sparse", sparse_points(scene), "--out", init_ply], gpu)
+                infer_cmd = [PY, "-m", "gsnet.infer", "--ckpt", args.ckpt,
+                             "--sparse", sparse_points(scene), "--out", init_ply]
+                if args.image_feats:
+                    infer_cmd += ["--image_feats", images_dir(scene)]
+                infer_s = run(infer_cmd, gpu)
                 metrics, s = optimize_eval(source, mp, args.iterations,
                                            ["--gsnet_init", init_ply, *args.train_extra], gpu)
                 res = {**metrics, "infer_seconds": infer_s, "optim_seconds": s,

@@ -25,21 +25,25 @@ class CorrespondenceDataset(Dataset):
         files = sorted(glob.glob(os.path.join(corr_dir, pattern)))
         if not files:
             raise FileNotFoundError(f"No correspondence files in {corr_dir}/{pattern}")
-        buffers = {k: [] for k in _KEYS}
+        has_img = "center_img" in np.load(files[0]).files
+        self.keys = list(_KEYS) + (["center_img", "neighbor_img"] if has_img else [])
+        buffers = {k: [] for k in self.keys}
         for f in files:
             d = np.load(f)
-            for k in _KEYS:
+            for k in self.keys:
                 buffers[k].append(d[k])
         self.data = {
             k: torch.from_numpy(np.concatenate(buffers[k], axis=0)).float()
-            for k in _KEYS
+            for k in self.keys
         }
         self.n = self.data["center_xyz"].shape[0]
+        self.feat_dim = self.data["center_img"].shape[-1] if has_img else 0
         self.files = files
-        print(f"[dataset] {len(files)} sequences, {self.n} sparse points total")
+        print(f"[dataset] {len(files)} sequences, {self.n} sparse points total"
+              + (f", img feat_dim={self.feat_dim}" if has_img else ""))
 
     def __len__(self):
         return self.n
 
     def __getitem__(self, i):
-        return {k: self.data[k][i] for k in _KEYS}
+        return {k: self.data[k][i] for k in self.keys}

@@ -18,7 +18,8 @@ import json
 import os
 import time
 
-from gsnet.waymo import discover_scenes, seg_name, sparse_points, gdense_path
+from gsnet.waymo import (discover_scenes, seg_name, sparse_points, gdense_path,
+                         images_dir)
 from gsnet.build_correspondences import build_for_sequence
 
 
@@ -39,6 +40,8 @@ def main():
     ap.add_argument("--input_subsample", type=float, default=1.0,
                     help="fraction of INPUT sparse points to keep (sparse-input training)")
     ap.add_argument("--workers", type=int, default=1)
+    ap.add_argument("--image_feats", action="store_true",
+                    help="bake per-point image features into corr (image-conditioned GS-Net)")
     args = ap.parse_args()
 
     test = set(args.test_scenes)
@@ -59,17 +62,19 @@ def main():
         if not os.path.exists(sp):
             print(f"[skip] {seg_name(s)}: missing sparse {sp}")
             continue
-        tasks.append((sp, gd, os.path.join(args.out_dir, f"{seg_name(s)}.npz")))
+        img = images_dir(s) if args.image_feats else None
+        tasks.append((sp, gd, os.path.join(args.out_dir, f"{seg_name(s)}.npz"), img))
 
     t0 = time.time()
     if args.workers > 1:
         import concurrent.futures as cf
         with cf.ProcessPoolExecutor(max_workers=args.workers) as ex:
-            futs = [ex.submit(build_for_sequence, sp, gd, o, **common)
-                    for sp, gd, o in tasks]
+            futs = [ex.submit(build_for_sequence, sp, gd, o, image_feats_dir=img, **common)
+                    for sp, gd, o, img in tasks]
             stats = [f.result() for f in cf.as_completed(futs)]
     else:
-        stats = [build_for_sequence(sp, gd, o, **common) for sp, gd, o in tasks]
+        stats = [build_for_sequence(sp, gd, o, image_feats_dir=img, **common)
+                 for sp, gd, o, img in tasks]
     os.makedirs(args.out_dir, exist_ok=True)
     with open(os.path.join(args.out_dir, "build_times.json"), "w") as f:
         json.dump({"total_seconds": time.time() - t0, "sequences": stats}, f, indent=2)

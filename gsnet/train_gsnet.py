@@ -39,11 +39,11 @@ def train(args):
         predict_opacity=not args.no_opacity,
         predict_scale_rot=not args.no_scale_rot,
     )
-    n_params = sum(p.numel() for p in GSNet(cfg).parameters())
-    print(f"[cfg] encoder={cfg.encoder_type}  params={n_params/1e3:.1f}K  "
-          f"weights={args.weights}")
-
     ds = CorrespondenceDataset(args.corr_dir)
+    cfg.feat_dim = ds.feat_dim          # image-conditioning auto-detected from corr
+    n_params = sum(p.numel() for p in GSNet(cfg).parameters())
+    print(f"[cfg] encoder={cfg.encoder_type}  feat_dim={cfg.feat_dim}  "
+          f"params={n_params/1e3:.1f}K  weights={args.weights}")
     net = GSNet(cfg).to(device)
     opt = torch.optim.Adam(net.parameters(), lr=args.lr)
     os.makedirs(args.out_dir, exist_ok=True)
@@ -61,6 +61,12 @@ def train(args):
 
     keys = ["center_xyz", "center_rgb", "neighbor_xyz", "neighbor_rgb",
             "gt_mu", "gt_rgb", "gt_scale", "gt_quat", "gt_opacity"]
+    if cfg.feat_dim > 0:
+        keys += ["center_img", "neighbor_img"]
+
+    def fwd(net, b):
+        return net(b["center_xyz"], b["center_rgb"], b["neighbor_xyz"], b["neighbor_rgb"],
+                   center_img=b.get("center_img"), neighbor_img=b.get("neighbor_img"))
     N = ds.n
     bs = args.batch_size
     net.train()
@@ -77,8 +83,7 @@ def train(args):
             for s in range(0, N - bs + 1, bs):
                 idx = perm[s:s + bs]
                 b = {k: data[k][idx] for k in keys}
-                pred = net(b["center_xyz"], b["center_rgb"],
-                           b["neighbor_xyz"], b["neighbor_rgb"])
+                pred = fwd(net, b)
                 loss, logs = gsnet_loss(pred, make_gt(b), cfg, weights=args.weights)
                 opt.zero_grad(set_to_none=True)
                 loss.backward()
@@ -96,8 +101,7 @@ def train(args):
             running = 0.0
             for batch in dl:
                 b = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
-                pred = net(b["center_xyz"], b["center_rgb"],
-                           b["neighbor_xyz"], b["neighbor_rgb"])
+                pred = fwd(net, b)
                 loss, logs = gsnet_loss(pred, make_gt(b), cfg, weights=args.weights)
                 opt.zero_grad(set_to_none=True)
                 loss.backward()

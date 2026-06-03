@@ -70,6 +70,10 @@ class GSNetConfig:
     # Paper bounds the raw offset to (-1, 1); set >1 if the scene is metric and
     # the K nearest dense Gaussians may sit farther than 1 unit from the SfM point.
     pos_offset_scale: float = 1.0
+    # Image-conditioning: per-point image feature dim (0 = off / point-only).
+    # When >0 the encoder input is [xyz(3), rgb(3), img_feat(feat_dim)] and
+    # in_dim is overridden to 6 + feat_dim in __init__.
+    feat_dim: int = 0
 
     # --- Ablation toggles (Table IV). When an attribute is disabled it falls
     # back to a fixed default and is excluded from the loss. ---
@@ -94,6 +98,8 @@ class GSNet(nn.Module):
         cfg = cfg or GSNetConfig()
         self.cfg = cfg
         T = cfg.T
+        # Image-conditioning widens the per-point input feature.
+        cfg.in_dim = 6 + int(getattr(cfg, "feat_dim", 0))
 
         # Geometry-aware feature encoding (pluggable; Sec. IV-A / Eq. 3).
         self.encoder = build_encoder(cfg)
@@ -107,7 +113,8 @@ class GSNet(nn.Module):
         self.head_opacity = nn.Linear(cfg.decoder_dim, T * 1)  # alpha_hat
 
     # ------------------------------------------------------------------ #
-    def forward(self, center_xyz, center_rgb, neighbor_xyz, neighbor_rgb):
+    def forward(self, center_xyz, center_rgb, neighbor_xyz, neighbor_rgb,
+                center_img=None, neighbor_img=None):
         """Predict T Gaussian primitives per input point.
 
         Args:
@@ -115,14 +122,22 @@ class GSNet(nn.Module):
             center_rgb:   (B, 3)   in [0, 1]
             neighbor_xyz: (B, M, 3)
             neighbor_rgb: (B, M, 3) in [0, 1]
+            center_img:   (B, feat_dim)     image features (if cfg.feat_dim>0)
+            neighbor_img: (B, M, feat_dim)
         Returns dict of predictions (all batched as (B, T, ...)).
         """
         cfg = self.cfg
         B = center_xyz.shape[0]
         T = cfg.T
 
-        center_feat = torch.cat([center_xyz, center_rgb], dim=-1)
-        neighbor_feat = torch.cat([neighbor_xyz, neighbor_rgb], dim=-1)
+        cparts = [center_xyz, center_rgb]
+        nparts = [neighbor_xyz, neighbor_rgb]
+        if int(getattr(cfg, "feat_dim", 0)) > 0:
+            assert center_img is not None, "feat_dim>0 but no image features passed"
+            cparts.append(center_img)
+            nparts.append(neighbor_img)
+        center_feat = torch.cat(cparts, dim=-1)
+        neighbor_feat = torch.cat(nparts, dim=-1)
 
         F = self.encoder(center_feat, neighbor_feat, center_xyz, neighbor_xyz)  # (B, D)
         h = self.shared_decoder(F)                               # (B, decoder_dim)

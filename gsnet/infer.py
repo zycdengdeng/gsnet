@@ -57,12 +57,26 @@ def run(args):
     nxyz_t = torch.from_numpy(n_cxyz[nn_idx]).float()
     nrgb_t = torch.from_numpy(crgb[nn_idx]).float()
 
+    # Image-conditioning: if the model expects image features, compute them for
+    # this scene (same images.bin-based featurizer used to build the corr).
+    cimg_t = nimg_t = None
+    if int(getattr(cfg, "feat_dim", 0)) > 0:
+        assert args.image_feats, "model has feat_dim>0; pass --image_feats <images_dir>"
+        from gsnet.image_feats import compute_point_image_feats
+        feats = compute_point_image_feats(os.path.dirname(args.sparse), args.image_feats)
+        assert feats.shape == (cxyz.shape[0], cfg.feat_dim), \
+            f"feat shape {feats.shape} != ({cxyz.shape[0]}, {cfg.feat_dim})"
+        cimg_t = torch.from_numpy(feats).float()
+        nimg_t = torch.from_numpy(feats[nn_idx]).float()
+
     mus, rgbs, scales, quats, ops = [], [], [], [], []
     N = cxyz.shape[0]
     for s in range(0, N, args.chunk):
         e = min(s + args.chunk, N)
         pred = net(cxyz_t[s:e].to(device), crgb_t[s:e].to(device),
-                   nxyz_t[s:e].to(device), nrgb_t[s:e].to(device))
+                   nxyz_t[s:e].to(device), nrgb_t[s:e].to(device),
+                   center_img=(cimg_t[s:e].to(device) if cimg_t is not None else None),
+                   neighbor_img=(nimg_t[s:e].to(device) if nimg_t is not None else None))
         # Denormalize geometry back to the original COLMAP frame.
         mu = pred["mu"].reshape(-1, 3).cpu().numpy() * scale + center
         sc = pred["scale"].reshape(-1, 3).cpu().numpy() * scale
@@ -108,6 +122,9 @@ def main():
     ap.add_argument("--chunk", type=int, default=200000)
     ap.add_argument("--opacity_thresh", type=float, default=0.0)
     ap.add_argument("--no_normalize", action="store_true")
+    ap.add_argument("--image_feats", default="",
+                    help="images dir for image-conditioned models (feat_dim>0); "
+                         "must match how the corr was built")
     ap.add_argument("--keep_default_scale", action="store_true",
                     help="keep the fixed default scale when scale/rot are not "
                          "predicted (default: use distCUDA2 std-init scale instead)")
