@@ -39,6 +39,7 @@
 **❓待用户定**：L2先打"跨传感器"还是"少视角"。
 
 **📁 关键路径**：Waymo 5cam=`/mnt/zihanw/EmerNeRF/data/waymo/colmap_input_5cam`(8训/2测=10275,15868;cam0前/1FL/2FR/3SL/4SR);`CORR/waymo5`;ckpt`runs/waymo5_gsnet`(T5);within-scene back=`colmap_input_5cam_next20`。CARLA io=`/mnt/zihanw/carla/input_output`,sparse=`/mnt/zihanw/carla/sparse_point`,`CORR/train`,多seed模型`runs/multiseed_sse/model_s{0-4}`。
+**🧠 网络改动:图像条件化GS-Net(2026-06-03,已push)**:消融证明encoder/属性都榨干了→点信息饱和、网络对图像'盲'→喂图像特征(cf pixelSplat)。鲁棒实现:用每点在`images.bin`里的真实2D观测xys采特征(零投影bug),多尺度色/梯度/拉普拉斯(v1手工15维,可升级冻结CNN),按read_points3D顺序对齐。开关`--image_feats`,feat_dim从corr自动检测,旧ckpt(feat_dim=0)向后兼容。链路:`image_feats.py`+model(in_dim=6+feat_dim)+build_correspondences+waymo_corr+dataset+train_gsnet+infer+waymo_sse。**工作流**:waymo_corr --image_feats→CORR/waymo5_img→train_gsnet(自动feat_dim)→runs/waymo5_gsnet_img→waymo_sse --image_feats。**待用户先smoke(F=15/feat_dim=15打印)再全量**。**判读**:有改善→升级CNN特征(真提升量级);没动→特征太弱或SSE无空间(结合共视<10%)。
 **🔧 近期新增工具**：`run_waymo_ablation`/`run_carla_ablation`(属性消融,6变体,断点续跑) · `train_gsnet --no_color/--no_opacity/--no_scale_rot` · `run_sse --train_extra`(透传如`--densify_until_iter 0`) · `run_waymo_withinscene` · `scene_similarity --explode`+块统计 · `waymo.resolve_scene`支持短名子串匹配。
 
 ---
