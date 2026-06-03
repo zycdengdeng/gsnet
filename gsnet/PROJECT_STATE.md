@@ -32,6 +32,7 @@
 - **押注组合 = dens_only/no_opacity × 外推regime**（合成用户两直觉:opacity坏+用稀疏/有洞regime）。
 
 **⏳ 在跑/待贴**：Waymo属性消融(`runs/waymo5_ablation/ablation_results.md`,**最关键**) + 干净Waymo T扫描(`resolve_scene`已修,重跑补SSE)。**已决定不跑**CARLA消融。
+**🔔 待办触发器(用户贴第一波消融结果时,必须主动提醒)**：① **infer已加distCUDA2 std-init scale fix(只影响no_scale_rot/xyz_rgb/dens_only)**→让用户`rm -rf runs/waymo5_ablation/{no_scale_rot,xyz_rgb,dens_only}/sse`+git pull+重跑同命令(跳训练只重评),得**公平的纯密化数**;② 据结果按需加`--no_rot`(拆scale/rot单独砍旋转,rot是已知噪声地板)、`geom_only`(xyz+scale_rot)、`xyz_opacity`组合(用户已同意第一波后做)。
 **❓待用户定**：L2先打"跨传感器"还是"少视角"。
 
 **📁 关键路径**：Waymo 5cam=`/mnt/zihanw/EmerNeRF/data/waymo/colmap_input_5cam`(8训/2测=10275,15868;cam0前/1FL/2FR/3SL/4SR);`CORR/waymo5`;ckpt`runs/waymo5_gsnet`(T5);within-scene back=`colmap_input_5cam_next20`。CARLA io=`/mnt/zihanw/carla/input_output`,sparse=`/mnt/zihanw/carla/sparse_point`,`CORR/train`,多seed模型`runs/multiseed_sse/model_s{0-4}`。
