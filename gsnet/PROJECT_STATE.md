@@ -13,6 +13,12 @@
 - 多行命令易因续行 `\` 后空行而断 → 给用户命令**写成单行**。
 - ⭐**用户明确要求：随时主动更新本 md，不要等被提醒**。每出一个结果/结论/决策就即时落档。
 
+## 0.0 ⭐ 代码审计 + "增益缩水"诊断（2026-06-03，用户怀疑重建代码有错）
+- **背景**：用户原版 GS-Net 在 CARLA SSE 给论文级增益(+2.08);本重建多seed只+0.28。用户疑"预测参数没正确替进3DGS/学错了"。
+- **端到端审计(infer→io→model→build_correspondences→losses→scene/__init__→gaussian_model)结论：未发现替换/学习的硬bug**。预测参数正确转3DGS约定(RGB→SH、scale→log、opacity→inverse_sigmoid、quat wxyz)写盘;`create_from_ply`正确加载并`active_sh_degree=0`;baseline走`create_from_pcd`(SfM稀疏点),与gsnet**只差init**,公平;pseudo-GT归一化/裁剪(scale→/scene_scale,clip(1e-6,0.999))与模型σ∈(0,1)同空间一致;损失pos用delta、scale同空间、opacity用max(α,0)对齐。**机制是对的。**
+- **最可能真因(非bug)=30k自适应densification抹平init优势**：densify_until_iter默认15000→baseline稀疏init靠densification一路加点追上→30k趋同→gap只剩+0.28。GS-Net的init价值被3DGS自带密化掩盖。
+- **诊断(已加`run_sse --train_extra`透传)**：关掉densification(`--densify_until_iter 0`)再比baseline vs gsnet。若gsnet≫baseline=washout证实(init真有用,价值在"免密化/快收敛",可正面重写故事);若仍≈=init本身弱(再查G_dense质量/T-to-K任意配对/损失权重)。命令见下方对话。**结果出来更新此处**。
+
 ## 0.1 ⭐⭐⭐ 决定性结果（2026-06-03，必读，改写结论）
 - **🎯 是 regime 不是协议（Waymo within-scene 裁决,`runs/waymo5_withinscene`）**：Δ_seen=**−0.74** ≈ Δ_unseen=**−0.77**（逐场景:12879 +1.15/+0.98、14004 −0.87/−0.77、3988 −2.51/−2.51）。**GS-Net 见没见过该场景对结果无影响** → 跨场景−0.9≈同场景−0.75。**"协议/同场景身份/分布邻近度"解释在 Waymo 被证伪**；救不了它的是**几何 regime（前视稠密→过度密化有害）**，与熟悉度无关。这是最干净的因果结论。
 - **⚠️ CARLA +1.3 在多 seed 下缩水（`runs/multiseed_sse`）**：SSE=**24.95±0.23**(5seed 24.64–25.28),基线24.67 → **真增益仅 +0.28±0.23**(4/5过线)。之前25.99/25.07=单次走运,**头条+1.3/论文+2.08 站不住**。
