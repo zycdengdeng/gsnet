@@ -94,17 +94,33 @@ def main():
     args = ap.parse_args()
     os.makedirs(args.out_dir, exist_ok=True)
 
+    # Resume: preload any already-completed variants (so re-running the command
+    # after adding a new variant reuses finished ones and writes a COMPLETE table
+    # instead of clobbering it with a single row).
     rows, baseline = {}, None
-    for i, name in enumerate(args.variants):
+    for name in args.variants:
+        rp = os.path.join(args.out_dir, name, "sse", "sse_results.json")
+        if os.path.exists(rp):
+            d = json.load(open(rp)).get("averages", {})
+            if "gsnet" in d:
+                rows[name] = d["gsnet"]["PSNR"]
+            if baseline is None and "baseline" in d:
+                baseline = d["baseline"]["PSNR"]
+    if rows:
+        print(f"[resume] reusing completed variants: {list(rows)}")
+
+    for name in args.variants:
         assert name in VARIANTS, f"unknown variant {name}"
+        if name in rows:
+            continue  # already done
         ckpt = train_variant(name, VARIANTS[name], args)
-        # run baseline only in the first variant's SSE; reuse afterwards
+        # run baseline only if we don't have one yet; reuse afterwards
         d = sse(name, ckpt, args, skip_baseline=(baseline is not None))
         if baseline is None and "baseline" in d:
             baseline = d["baseline"]["PSNR"]
         rows[name] = d["gsnet"]["PSNR"]
-        # write/refresh table after each variant
-        write_table(rows, baseline, args.out_dir)
+        write_table(rows, baseline, args.out_dir)  # refresh after each variant
+    write_table(rows, baseline, args.out_dir)
     print("\n" + open(os.path.join(args.out_dir, "ablation_results.md")).read())
 
 
