@@ -159,4 +159,16 @@ def build_subset_source(scene_path, keep_cams, tag):
 def resolve_scene(root, name_or_path):
     if os.path.isdir(name_or_path):
         return name_or_path
-    return os.path.join(root, name_or_path)
+    direct = os.path.join(root, name_or_path)
+    if os.path.isdir(direct):
+        return direct
+    # Fall back to a substring match against discovered scenes, so short ids
+    # (e.g. "10275144660749673822_5755_561") resolve to the full segment dir
+    # ("segment-10275..._5775_561_with_camera_labels").
+    matches = [s for s in discover_scenes(root) if name_or_path in seg_name(s)]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        raise ValueError(f"ambiguous scene '{name_or_path}' matches "
+                         f"{[seg_name(m) for m in matches]}")
+    return direct  # let it fail downstream with a clear missing-path message
