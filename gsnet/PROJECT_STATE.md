@@ -25,7 +25,7 @@
 6. **相似度**：CARLA场景比Waymo紧(逐段0.21 vs 0.32)→解释CARLA跨场景也灵。
 7. **场景310**：所有seed都崩(init正常,优化病理)→诚实排除。**510(−0.49)正常勿丢**。
 8. **310清算完成(reaggregate.py剔310)**：所有rebuttal结论剔310后**都成立且更干净、无需重跑**——Reviewer A(encoder最终配方顶4打平+1.8~2.1)、Reviewer C(优雅降级)、最终配方T5@M3(T5=27.19最好)、主表SSE+1.69。详见§0.00。
-9. **CSE诊断修正**：CARLA CSE是12环视奇→偶差30°、几何大多已观测,**非"无观测无解"**;+0.02的真因更可能是floater+washout(好init被源视角密化磨掉)。**当前在试 CSE×densify-off**(`run_cse --train_extra "--densify_until_iter 0"`)看能否露出真增益。
+9. **⭐CSE washout确认=真增益(2026-06-03)**：CARLA CSE×**densify-off**(剔310,`runs/cse_densify_off`)=base17.10/gsnet18.38→**Δ+1.28**(vs densify-on +0.02),LPIPS0.346→0.295,优化快40%(23.6→14.8min)。→**GS-Net多视角一致init对跨传感器真有用,只是被30k源视角密化磨平**。⚠️tradeoff:densify-off绝对PSNR更低(18.38<19.65),故只能**同设置内**比;写法=效率/预算角度(同预算/不靠激进密化时+1.3+LPIPS+收敛快)或扫densify_until_iter找甜点。**⇒对Waymo启示:Waymo跨传感器(waymo5_cse,front→side)×densify-off是最有希望的Waymo赢法**(已给waymo_sse加--train_extra)。
 
 **🎯 唯一在打的目标 = 让 Waymo 转正（不改网络/行文）**——三杠杆：
 - **L1 去有害成分**：属性消融(`run_waymo_ablation`,跑中)→ no_opacity/dens_only 能否把−0.9拉向正？(假设opacity是真实数据坏/不可迁移因子)

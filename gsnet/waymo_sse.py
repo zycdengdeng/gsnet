@@ -106,7 +106,12 @@ def main():
                     help="cross-sensor: ONLY these cameras are training/source; "
                          "all cameras except source+target are dropped "
                          "(e.g. --source_cams cam1 cam2 --target_cams cam0 = FL+FR->FRONT)")
+    ap.add_argument("--train_extra", default="",
+                    help="extra args to train.py for BOTH cfgs, e.g. "
+                         "\"--densify_until_iter 0\" (preserve GS-Net's view-consistent "
+                         "init from source-view densification washout)")
     args = ap.parse_args()
+    args.train_extra = args.train_extra.split()
 
     # Per-experiment tag isolates the sparse copy + test.txt so concurrent runs
     # with different splits don't overwrite each other's test.txt.
@@ -154,7 +159,8 @@ def main():
             source = args._src_by_scene[scene]
             if cfg == "baseline":
                 mp = os.path.join(args.out_dir, name, "baseline")
-                metrics, s = optimize_eval(source, mp, args.iterations, [], gpu)
+                metrics, s = optimize_eval(source, mp, args.iterations,
+                                           list(args.train_extra), gpu)
                 res = {**metrics, "optim_seconds": s, "total_seconds": s}
             else:
                 mp = os.path.join(args.out_dir, name, "gsnet")
@@ -163,7 +169,7 @@ def main():
                 infer_s = run([PY, "-m", "gsnet.infer", "--ckpt", args.ckpt,
                                "--sparse", sparse_points(scene), "--out", init_ply], gpu)
                 metrics, s = optimize_eval(source, mp, args.iterations,
-                                           ["--gsnet_init", init_ply], gpu)
+                                           ["--gsnet_init", init_ply, *args.train_extra], gpu)
                 res = {**metrics, "infer_seconds": infer_s, "optim_seconds": s,
                        "total_seconds": infer_s + s}
             with lock:
