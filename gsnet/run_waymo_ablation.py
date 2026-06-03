@@ -24,10 +24,13 @@
 #
 
 import argparse
+import concurrent.futures as cf
 import json
 import os
+import queue
 import subprocess
 import sys
+import threading
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -51,7 +54,7 @@ def sh(cmd, gpus):
     subprocess.run([str(c) for c in cmd], check=True, cwd=REPO, env=env)
 
 
-def train_variant(name, flags, args):
+def train_variant(name, flags, args, gpus):
     model = os.path.join(args.out_dir, name, "model")
     ckpt = os.path.join(model, "gsnet_latest.pt")
     if os.path.exists(ckpt):
@@ -60,21 +63,28 @@ def train_variant(name, flags, args):
     sh([PY, "-m", "gsnet.train_gsnet", "--corr_dir", args.corr_dir, "--out_dir", model,
         "--encoder_type", "geom", "--color_activation", "tanh",
         "--w_rot", "0.1", "--w_pos", "10", "--T", str(args.T), "--M", str(args.M),
-        "--in_memory", "1", "--epochs", str(args.epochs), *flags], args.gpus[:1])
+        "--in_memory", "1", "--epochs", str(args.epochs), *flags], gpus)
     return ckpt
 
 
-def sse(name, ckpt, args, skip_baseline):
+def run_baseline(args, gpus):
+    """Deterministic baseline (sparse-SfM init), shared by all variants."""
+    out = os.path.join(args.out_dir, "_baseline")
+    sh([PY, "-m", "gsnet.waymo_sse", "--root", args.root,
+        "--test_scenes", *args.test_scenes, "--ckpt", "none", "--out_dir", out,
+        "--skip_gsnet", "--n_holdout", str(args.n_holdout),
+        "--iterations", str(args.iterations), "--gpus", *[str(g) for g in gpus]], gpus)
+    return json.load(open(os.path.join(out, "sse_results.json")))["averages"]["baseline"]["PSNR"]
+
+
+def sse_gsnet(name, ckpt, args, gpus):
+    """GS-Net-only SSE for one variant (baseline computed separately)."""
     out = os.path.join(args.out_dir, name, "sse")
-    cmd = [PY, "-m", "gsnet.waymo_sse", "--root", args.root,
-           "--test_scenes", *args.test_scenes, "--ckpt", ckpt, "--out_dir", out,
-           "--n_holdout", str(args.n_holdout), "--iterations", str(args.iterations),
-           "--gpus", *[str(g) for g in args.gpus]]
-    if skip_baseline:
-        cmd.append("--skip_baseline")
-    sh(cmd, args.gpus)
-    d = json.load(open(os.path.join(out, "sse_results.json")))["averages"]
-    return d
+    sh([PY, "-m", "gsnet.waymo_sse", "--root", args.root,
+        "--test_scenes", *args.test_scenes, "--ckpt", ckpt, "--out_dir", out,
+        "--skip_baseline", "--n_holdout", str(args.n_holdout),
+        "--iterations", str(args.iterations), "--gpus", *[str(g) for g in gpus]], gpus)
+    return json.load(open(os.path.join(out, "sse_results.json")))["averages"]["gsnet"]["PSNR"]
 
 
 def main():
@@ -92,34 +102,68 @@ def main():
     ap.add_argument("--iterations", type=int, default=30000)
     ap.add_argument("--n_holdout", type=int, default=4)
     args = ap.parse_args()
+    for v in args.variants:
+        assert v in VARIANTS, f"unknown variant {v}"
     os.makedirs(args.out_dir, exist_ok=True)
 
-    # Resume: preload any already-completed variants (so re-running the command
-    # after adding a new variant reuses finished ones and writes a COMPLETE table
-    # instead of clobbering it with a single row).
-    rows, baseline = {}, None
+    # Resume: preload completed variants + baseline (reuse, don't re-run).
+    rows = {}
     for name in args.variants:
         rp = os.path.join(args.out_dir, name, "sse", "sse_results.json")
         if os.path.exists(rp):
-            d = json.load(open(rp)).get("averages", {})
-            if "gsnet" in d:
-                rows[name] = d["gsnet"]["PSNR"]
-            if baseline is None and "baseline" in d:
-                baseline = d["baseline"]["PSNR"]
-    if rows:
-        print(f"[resume] reusing completed variants: {list(rows)}")
+            av = json.load(open(rp)).get("averages", {})
+            if "gsnet" in av:
+                rows[name] = av["gsnet"]["PSNR"]
+    baseline = None
+    bp = os.path.join(args.out_dir, "_baseline", "sse_results.json")
+    if os.path.exists(bp):
+        baseline = json.load(open(bp))["averages"]["baseline"]["PSNR"]
+    else:
+        for name in args.variants:  # older serial runs stored baseline in a variant
+            rp = os.path.join(args.out_dir, name, "sse", "sse_results.json")
+            if os.path.exists(rp):
+                av = json.load(open(rp)).get("averages", {})
+                if "baseline" in av:
+                    baseline = av["baseline"]["PSNR"]
+                    break
+    missing = [v for v in args.variants if v not in rows]
+    print(f"[resume] done={list(rows)}  missing={missing}  baseline={baseline}", flush=True)
 
-    for name in args.variants:
-        assert name in VARIANTS, f"unknown variant {name}"
-        if name in rows:
-            continue  # already done
-        ckpt = train_variant(name, VARIANTS[name], args)
-        # run baseline only if we don't have one yet; reuse afterwards
-        d = sse(name, ckpt, args, skip_baseline=(baseline is not None))
-        if baseline is None and "baseline" in d:
-            baseline = d["baseline"]["PSNR"]
-        rows[name] = d["gsnet"]["PSNR"]
-        write_table(rows, baseline, args.out_dir)  # refresh after each variant
+    gpu_q = queue.Queue()
+    for g in args.gpus:
+        gpu_q.put(g)
+
+    # Phase 1: train missing variants IN PARALLEL (one GPU each).
+    ckpts = {}
+    def train_worker(name):
+        g = gpu_q.get()
+        try:
+            ckpts[name] = train_variant(name, VARIANTS[name], args, [g])
+        finally:
+            gpu_q.put(g)
+    with cf.ThreadPoolExecutor(max_workers=len(args.gpus)) as ex:
+        for f in cf.as_completed([ex.submit(train_worker, n) for n in missing]):
+            f.result()
+
+    # Baseline once (deterministic, shared) — uses all GPUs (parallel scenes).
+    if baseline is None:
+        baseline = run_baseline(args, args.gpus)
+
+    # Phase 2: GS-Net SSE for missing variants IN PARALLEL (one GPU each).
+    lock = threading.Lock()
+    def sse_worker(name):
+        g = gpu_q.get()
+        try:
+            psnr = sse_gsnet(name, ckpts[name], args, [g])
+            with lock:
+                rows[name] = psnr
+                write_table(rows, baseline, args.out_dir)
+        finally:
+            gpu_q.put(g)
+    with cf.ThreadPoolExecutor(max_workers=len(args.gpus)) as ex:
+        for f in cf.as_completed([ex.submit(sse_worker, n) for n in missing]):
+            f.result()
+
     write_table(rows, baseline, args.out_dir)
     print("\n" + open(os.path.join(args.out_dir, "ablation_results.md")).read())
 
