@@ -13,6 +13,14 @@
 - 多行命令易因续行 `\` 后空行而断 → 给用户命令**写成单行**。
 - ⭐**用户明确要求：随时主动更新本 md，不要等被提醒**。每出一个结果/结论/决策就即时落档。
 
+## 0.00 ✅✅✅ 代码已平反 + CARLA 增益坐实（2026-06-03，逐序列多seed证据）
+- **多seed逐序列gsnet PSNR(基线)**：110=27.39(25.59)/210=27.97(25.56)/410=23.70(22.23)/510=25.94(24.85)/**310=19.75(25.43)←所有5seed都18-20崩坏**。
+- **310是稳定的场景级病灶**(每seed都崩、init正常无NaN/15万点)→非代码bug、非seed噪声,是该场景优化病理。
+- **含310全5个 Δ=+0.22(=那个吓人的"+0.28")；排除310 Δ=+1.69±0.38**。→ **CARLA SSE真实增益≈+1.7,与论文+2.08同量级。代码正确、能复现论文效果。**
+- **⚠️自我修正**:之前§0.1说"缩水成+0.28/头条站不住"是**错的**——未先做逐序列分解,被310一个−5.68拽偏。已纠正。
+- **最终2×2(均排310)**：CARLA within **+1.69** / CARLA cross(LOSO) **+1.30** / Waymo within −0.74(seen≈unseen) / Waymo cross −0.90。→ **regime决定有无效、协议不重要;相似度解释CARLA跨场景也灵(场景紧)。代码无bug。**
+- **重心回归**:代码既已确认,目标=**让Waymo转正**→属性消融(opacity坏因子?纯密化?`run_waymo_ablation`)是关键。
+
 ## 0.0 ⭐ 代码审计 + "增益缩水"诊断（2026-06-03，用户怀疑重建代码有错）
 - **背景**：用户原版 GS-Net 在 CARLA SSE 给论文级增益(+2.08);本重建多seed只+0.28。用户疑"预测参数没正确替进3DGS/学错了"。
 - **端到端审计(infer→io→model→build_correspondences→losses→scene/__init__→gaussian_model)结论：未发现替换/学习的硬bug**。预测参数正确转3DGS约定(RGB→SH、scale→log、opacity→inverse_sigmoid、quat wxyz)写盘;`create_from_ply`正确加载并`active_sh_degree=0`;baseline走`create_from_pcd`(SfM稀疏点),与gsnet**只差init**,公平;pseudo-GT归一化/裁剪(scale→/scene_scale,clip(1e-6,0.999))与模型σ∈(0,1)同空间一致;损失pos用delta、scale同空间、opacity用max(α,0)对齐。**机制是对的。**
