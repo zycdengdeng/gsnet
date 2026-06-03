@@ -27,6 +27,9 @@
 - **✅ 相似度控制扛住pooling（`runs/scene_similarity_explode`）**：逐段+排同场景后 carla-carla **0.211** < waymo-waymo **0.318**(比值0.66,与pool版0.61一致),cross0.356。"CARLA更同质"为真。⚠️该run的test-z(15868 z=+2.39)不可信(train基线被50CARLA段主导);Waymo内是否离群以纯Waymo那次(z=+0.44,in-dist)为准。
 - **两个重跑进展(2026-06-03晚)**：CARLA LOSO **已重跑成功**(见上,跨场景+1.3排310);干净Waymo T扫描挂在**场景名解析**(传短名,`resolve_scene`只精确拼接)**非OOM**——T1/T5模型已训好,**已修`resolve_scene`支持子串匹配**,重跑只补SSE。
 - **进行中(2026-06-03晚)**：densify on/off 诊断(`runs/sse_densify_on|off`,验证washout) + Waymo T扫描重跑(补SSE)。**待用户贴**:多seed逐序列PSNR(查310)、两份densify表、T扫描表。
+- **310 init 正常**(15万点/无NaN/坐标±200)→崩在**优化层面**非init退化;可丢310(灾难离群),**510(−0.49)正常轻微负勿cherry-pick**。
+- **⭐ 属性消融工具就绪(2026-06-03,回应用户假设)**：`train_gsnet --no_color/--no_opacity/--no_scale_rot`(禁用→默认值+不入loss;infer读ckpt自动一致) + `run_waymo_ablation`(full/no_opacity/no_color/no_scale_rot/dens_only)。**假设:真实数据上opacity是坏/不可迁移因子,纯密化(位置)才有用**。`runs/waymo5_ablation`,待跑。
+- **regime/帧数(用户质疑,认同)**：20帧是为within-scene协议A/B选的(同密度),**非为展示GS-Net最佳regime**;既已确认是regime非协议,该用**稀疏/有空洞**regime展示。3cam(无空洞)≈基线、5cam(加侧视本应有空洞)反掉、抽帧越稀越掉——**均为全属性**结果,疑opacity/scale过度密化作祟。**计划:先属性消融(当前20帧,数据现成)找有用因子→再把精简版(如dens_only)放稀疏/少帧regime放大**。
 
 
 - **Waymo SSE 稀疏度 sweep 跑完**（T=5, ckpt `waymo5_gsnet`, 跨场景2测试场景, `runs/waymo5_sparsity/sparsity_sweep.md`）：
