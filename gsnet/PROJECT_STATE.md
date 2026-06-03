@@ -13,7 +13,15 @@
 - 多行命令易因续行 `\` 后空行而断 → 给用户命令**写成单行**。
 - ⭐**用户明确要求：随时主动更新本 md，不要等被提醒**。每出一个结果/结论/决策就即时落档。
 
-## 0.2 ⭐⭐ 本会话关键结论（2026-06-02，必读；修正了几条旧结论）
+## 0.1 ⭐⭐⭐ 决定性结果（2026-06-03，必读，改写结论）
+- **🎯 是 regime 不是协议（Waymo within-scene 裁决,`runs/waymo5_withinscene`）**：Δ_seen=**−0.74** ≈ Δ_unseen=**−0.77**（逐场景:12879 +1.15/+0.98、14004 −0.87/−0.77、3988 −2.51/−2.51）。**GS-Net 见没见过该场景对结果无影响** → 跨场景−0.9≈同场景−0.75。**"协议/同场景身份/分布邻近度"解释在 Waymo 被证伪**；救不了它的是**几何 regime（前视稠密→过度密化有害）**，与熟悉度无关。这是最干净的因果结论。
+- **⚠️ CARLA +1.3 在多 seed 下缩水（`runs/multiseed_sse`）**：SSE=**24.95±0.23**(5seed 24.64–25.28),基线24.67 → **真增益仅 +0.28±0.23**(4/5过线)。之前25.99/25.07=单次走运,**头条+1.3/论文+2.08 站不住**。
+- **CARLA CSE 多 seed（`runs/multiseed_cse`）**：=**19.37±0.07**,基线19.66 → **稳定 −0.29**(方差极小)。CSE=可靠轻微负,非≈基线。
+- **诚实定调**：GS-Net 增益=**小且regime依赖**——仅CARLA SSE(有覆盖空洞)+0.28;CSE−0.29、Waymo−0.8。rebuttal须重写卖点(见§7.x待补)。
+- **✅ 相似度控制扛住pooling（`runs/scene_similarity_explode`）**：逐段+排同场景后 carla-carla **0.211** < waymo-waymo **0.318**(比值0.66,与pool版0.61一致),cross0.356。"CARLA更同质"为真。⚠️该run的test-z(15868 z=+2.39)不可信(train基线被50CARLA段主导);Waymo内是否离群以纯Waymo那次(z=+0.44,in-dist)为准。
+- **❌ 两个跑挂(夜里6任务挤爆8卡→OOM,需单独重跑)**：CARLA LOSO(`runs/carla_loso` 5折3个None+310崩坏18.59,作废) ; 干净Waymo T扫描(`runs/Tsweep_waymo_clean` 表空,全挂)。2×2右上(CARLA cross)仍未定。
+
+
 - **Waymo SSE 稀疏度 sweep 跑完**（T=5, ckpt `waymo5_gsnet`, 跨场景2测试场景, `runs/waymo5_sparsity/sparsity_sweep.md`）：
 
   | n_holdout | train/cam | base | gsnet | Δ |
