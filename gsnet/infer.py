@@ -72,9 +72,26 @@ def run(args):
         quats.append(pred["quat"].reshape(-1, 4).cpu().numpy())
         ops.append(pred["opacity"].reshape(-1).cpu().numpy())
 
+    mu_all = np.concatenate(mus)
+    scale_all = np.concatenate(scales)
+    # When scale/rotation are NOT predicted (ablation: --no_scale_rot / dens_only
+    # / xyz_rgb), the model emits a fixed isotropic default scale. That is an
+    # unfair, non-adaptive init. Instead fall back to the STANDARD 3DGS init
+    # heuristic on the (denser) predicted points -- per-point distCUDA2 scale --
+    # so "pure densification" is initialized exactly like create_from_pcd would.
+    if not cfg.predict_scale_rot and not getattr(args, "keep_default_scale", False):
+        tree = cKDTree(mu_all)
+        k = min(4, len(mu_all))
+        dd, _ = tree.query(mu_all, k=k)               # col 0 is self (dist 0)
+        sq = (dd[:, 1:] ** 2).mean(axis=1) if k > 1 else np.full(len(mu_all), 1e-6)
+        s_lin = np.sqrt(np.clip(sq, 1e-14, None)).astype(np.float32)
+        scale_all = np.repeat(s_lin[:, None], 3, axis=1)
+        print(f"[infer] scale/rot not predicted -> distCUDA2 std-init scale "
+              f"(median={np.median(s_lin):.4f})")
+
     P = save_gaussians_ply(
         args.out,
-        np.concatenate(mus), np.concatenate(rgbs), np.concatenate(scales),
+        mu_all, np.concatenate(rgbs), scale_all,
         np.concatenate(quats), np.concatenate(ops),
         opacity_thresh=args.opacity_thresh,
     )
@@ -91,6 +108,9 @@ def main():
     ap.add_argument("--chunk", type=int, default=200000)
     ap.add_argument("--opacity_thresh", type=float, default=0.0)
     ap.add_argument("--no_normalize", action="store_true")
+    ap.add_argument("--keep_default_scale", action="store_true",
+                    help="keep the fixed default scale when scale/rot are not "
+                         "predicted (default: use distCUDA2 std-init scale instead)")
     run(ap.parse_args())
 
 
