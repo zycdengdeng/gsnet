@@ -42,17 +42,16 @@
 - **押注组合 = dens_only/no_opacity × 外推regime**（合成用户两直觉:opacity坏+用稀疏/有洞regime）。
 
 **🧪 Waymo属性消融第一波(`runs/waymo5_ablation`,8/2跨场景SSE,baseline27.31)**:full**−0.41**(最好)/no_color−0.42/no_opacity−0.82/no_scale_rot−2.85⚠️/xyz_rgb−1.15⚠️/dens_only−1.66⚠️(⚠️=旧固定0.01scale不公平,待distCUDA2修复重评)。**结论:(1)no_opacity比full差→opacity不是坏因子、反而有用,用户假设否;(2)full最不差但仍负,砍任何属性都更糟→无变体把Waymo拉正**。与相机共视<10%发现一致=Waymo无GS-Net可利用结构、几何决定、调参翻不动。lean3个公平重评待跑(rm其sse重跑,期望仍翻不过−0.41)。
-**⏳ 当前状态/待用户贴回(2026-06-03晚)**——4 个 Waymo 实验在跑/待跑：
-  | 实验 | 结果文件 | 看什么 | 优先级 |
+**⏳ 在跑/待cat(2026-06-03晚,用户跑完会说,我负责cat)**——按优先级：
+  | # | 实验 | cat 文件 | 看什么 |
   |---|---|---|---|
-  | **图像条件化GS-Net** | `runs/waymo5_imgcond/sse/sse_results.md` | 喂图像把Δ从−0.41抬多少(有→升级CNN特征) | ⭐最高(网络改动) |
-  | **Waymo SSE×densify-off** | `runs/waymo5_sse_densifyoff/sse_results.md` | washout闸门:SSE到底有没有空间 | ⭐高 |
-  | Waymo属性消融 lean重评(fair scale) | `runs/waymo5_ablation/ablation_results.md` | dens_only/xyz_rgb公平数(预期仍翻不过full−0.41) | 中 |
-  | 干净Waymo T扫描 | `runs/Tsweep_waymo_clean/Tsweep.md` | Waymo最优T+埋28.40(模型已训好只补SSE) | 中 |
-  已收:CSE×densify-off(+1.28)、消融wave1、相机overlap、各reagg。**已决定不跑**CARLA消融。
-  图像条件化:corr已干净重建(8场景,F=15),smoke训通(feat_dim=15,loss降);一键驱动`run_waymo_train_sse`(训完自动评测)。
-**🔔 待办触发器(用户贴第一波消融结果时,必须主动提醒)**：① **infer已加distCUDA2 std-init scale fix(只影响no_scale_rot/xyz_rgb/dens_only)**→让用户`rm -rf runs/waymo5_ablation/{no_scale_rot,xyz_rgb,dens_only}/sse`+git pull+重跑同命令(跳训练只重评),得**公平的纯密化数**;② 据结果按需加`--no_rot`(拆scale/rot单独砍旋转,rot是已知噪声地板)、`geom_only`(xyz+scale_rot)、`xyz_opacity`组合(用户已同意第一波后做)。
-**❓待用户定**：L2先打"跨传感器"还是"少视角"。
+  | 1⭐ | **init谱系诊断** | `runs/waymo5_initcmp/initcmp.md` | **MVS≫SfM且GS-Net≪MVS?→Waymo是'预测质量问题(可修)'而非'regime没救'**(最可能改写方向) |
+  | 2 | 合成cam0跨传感器 | `runs/waymo5_synthcam0_d2000/sse_results.md` + `..._doff/sse_results.md` | Waymo跨传感器(最佳覆盖目标)能不能正 |
+  | 3 | 收敛曲线(路子A) | `runs/waymo5_sse_iter{3000,7000,15000,30000}/sse_results.md` | GS-Net是否早期(3k/7k)就赢=效率正结果 |
+  | 4 | anchor-loss扫W | `runs/waymo5_anchor_w{0.01,0.05,0.2}/sse_results.md` | 持续先验(不止init)能否救SSE |
+  | 5 | CSE甜点多seed | `runs/cse_d2000_s{0,1,2,3,4}/cse_results.json` | 钉死CSE +1.98±std(写主表) |
+  | 6 | 稀疏帧20场景 | 用户跑COLMAP→给`<新root>`,我串`waymo_gdense→waymo_corr(16训/4测)→train→sse` | 稀疏宽基线=GS-Net主场能否正 |
+  **已收并分析(不用再cat)**:CARLA SSE+1.69/CSE-sweep(2000=+1.98)/Waymo SSE全负(图像条件化−0.50/densify-off−0.12/T全负T3=26.70埋28.40/消融full−0.41最优)/within≈cross/相机共视<10%/各reagg(A/C/T5成立)/CORR=8干净。**已决定不跑**CARLA消融、像素对齐(丢创新)。
 
 **📁 关键路径**：Waymo 5cam=`/mnt/zihanw/EmerNeRF/data/waymo/colmap_input_5cam`(8训/2测=10275,15868;cam0前/1FL/2FR/3SL/4SR);`CORR/waymo5`;ckpt`runs/waymo5_gsnet`(T5);within-scene back=`colmap_input_5cam_next20`。CARLA io=`/mnt/zihanw/carla/input_output`,sparse=`/mnt/zihanw/carla/sparse_point`,`CORR/train`,多seed模型`runs/multiseed_sse/model_s{0-4}`。
 **🧠 网络改动:图像条件化GS-Net(2026-06-03,已push)**:消融证明encoder/属性都榨干了→点信息饱和、网络对图像'盲'→喂图像特征(cf pixelSplat)。鲁棒实现:用每点在`images.bin`里的真实2D观测xys采特征(零投影bug),多尺度色/梯度/拉普拉斯(v1手工15维,可升级冻结CNN),按read_points3D顺序对齐。开关`--image_feats`,feat_dim从corr自动检测,旧ckpt(feat_dim=0)向后兼容。链路:`image_feats.py`+model(in_dim=6+feat_dim)+build_correspondences+waymo_corr+dataset+train_gsnet+infer+waymo_sse。**工作流**:waymo_corr --image_feats→CORR/waymo5_img→train_gsnet(自动feat_dim)→runs/waymo5_gsnet_img→waymo_sse --image_feats。**待用户先smoke(F=15/feat_dim=15打印)再全量**。**判读**:有改善→升级CNN特征(真提升量级);没动→特征太弱或SSE无空间(结合共视<10%)。
