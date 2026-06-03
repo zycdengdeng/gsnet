@@ -33,6 +33,7 @@
 - **L3 少密化**：小T(T扫描中)。
 - **押注组合 = dens_only/no_opacity × 外推regime**（合成用户两直觉:opacity坏+用稀疏/有洞regime）。
 
+**🧪 Waymo属性消融第一波(`runs/waymo5_ablation`,8/2跨场景SSE,baseline27.31)**:full**−0.41**(最好)/no_color−0.42/no_opacity−0.82/no_scale_rot−2.85⚠️/xyz_rgb−1.15⚠️/dens_only−1.66⚠️(⚠️=旧固定0.01scale不公平,待distCUDA2修复重评)。**结论:(1)no_opacity比full差→opacity不是坏因子、反而有用,用户假设否;(2)full最不差但仍负,砍任何属性都更糟→无变体把Waymo拉正**。与相机共视<10%发现一致=Waymo无GS-Net可利用结构、几何决定、调参翻不动。lean3个公平重评待跑(rm其sse重跑,期望仍翻不过−0.41)。
 **⏳ 当前状态(2026-06-03晚)**：Waymo属性消融**并行重跑中**(`runs/waymo5_ablation/ablation_results.md`,**最关键**,6变体含xyz_rgb,8卡)。**待用户跑/贴**:① Waymo消融表 ② **CSE×densify-off**(`runs/cse_densify_off`,验washout) ③ 干净Waymo T扫描(`resolve_scene`已修,重跑补SSE)。**已决定不跑**CARLA消融。
 **🔔 待办触发器(用户贴第一波消融结果时,必须主动提醒)**：① **infer已加distCUDA2 std-init scale fix(只影响no_scale_rot/xyz_rgb/dens_only)**→让用户`rm -rf runs/waymo5_ablation/{no_scale_rot,xyz_rgb,dens_only}/sse`+git pull+重跑同命令(跳训练只重评),得**公平的纯密化数**;② 据结果按需加`--no_rot`(拆scale/rot单独砍旋转,rot是已知噪声地板)、`geom_only`(xyz+scale_rot)、`xyz_opacity`组合(用户已同意第一波后做)。
 **❓待用户定**：L2先打"跨传感器"还是"少视角"。
