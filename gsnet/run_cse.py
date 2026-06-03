@@ -94,7 +94,12 @@ def main():
     ap.add_argument("--iterations", type=int, default=30000)
     ap.add_argument("--skip_baseline", action="store_true")
     ap.add_argument("--skip_gsnet", action="store_true")
+    ap.add_argument("--train_extra", default="",
+                    help="extra args to train.py for BOTH cfgs, e.g. "
+                         "\"--densify_until_iter 0\" (preserve GS-Net's view-consistent "
+                         "init from source-view densification washout)")
     args = ap.parse_args()
+    args.train_extra = args.train_extra.split()
 
     jobs = []
     for sid in args.ids:
@@ -121,7 +126,8 @@ def main():
             sparse_ply = os.path.join(args.sparse_root, f"S{scene:02d}", f"{sid}_sparse.ply")
             if cfg == "baseline":
                 mp = os.path.join(args.out_dir, sid, "baseline")
-                metrics, s = optimize_eval(source, mp, args.iterations, [], gpu)
+                metrics, s = optimize_eval(source, mp, args.iterations,
+                                           list(args.train_extra), gpu)
                 res = {**metrics, "optim_seconds": s, "total_seconds": s}
             else:
                 mp = os.path.join(args.out_dir, sid, "gsnet")
@@ -130,7 +136,7 @@ def main():
                 infer_s = run([PY, "-m", "gsnet.infer", "--ckpt", args.ckpt,
                                "--sparse", sparse_ply, "--out", init_ply], gpu)
                 metrics, s = optimize_eval(source, mp, args.iterations,
-                                           ["--gsnet_init", init_ply], gpu)
+                                           ["--gsnet_init", init_ply, *args.train_extra], gpu)
                 res = {**metrics, "infer_seconds": infer_s, "optim_seconds": s,
                        "total_seconds": infer_s + s}
             with lock:
