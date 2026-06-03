@@ -40,7 +40,8 @@ try:
 except:
     SPARSE_ADAM_AVAILABLE = False
 
-def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
+def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from,
+             anchor_ply="", anchor_weight=0.0, anchor_until=0):
 
     if not SPARSE_ADAM_AVAILABLE and opt.optimizer_type == "sparse_adam":
         sys.exit(f"Trying to use sparse adam but it is not installed, please install the correct rasterizer using pip install [3dgs_accel].")
@@ -56,6 +57,21 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+
+    # GS-Net persistent prior (anchor): keep optimized Gaussians near the GS-Net
+    # predicted geometry throughout optimization (not just as init). Novelty-
+    # preserving (still point-based). Off when anchor_weight<=0.
+    anchor_xyz = None
+    if anchor_ply and anchor_weight > 0:
+        from gsnet.common import read_points_any
+        import numpy as _np
+        axyz, _ = read_points_any(anchor_ply)
+        if axyz.shape[0] > 20000:
+            axyz = axyz[_np.random.default_rng(0).choice(axyz.shape[0], 20000, replace=False)]
+        anchor_xyz = torch.from_numpy(axyz).float().cuda()
+        if anchor_until <= 0:
+            anchor_until = opt.iterations
+        print(f"[anchor] {anchor_xyz.shape[0]} anchor pts, weight={anchor_weight}, until={anchor_until}")
 
     iter_start = torch.cuda.Event(enable_timing = True)
     iter_end = torch.cuda.Event(enable_timing = True)
@@ -138,6 +154,16 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             Ll1depth = Ll1depth.item()
         else:
             Ll1depth = 0
+
+        # GS-Net anchor: pull a random subset of current Gaussians toward the
+        # nearest GS-Net-predicted point (one-directional Chamfer), so the
+        # optimization stays close to the learned geometry / resists drift.
+        if anchor_xyz is not None and iteration <= anchor_until:
+            g = gaussians.get_xyz
+            k = min(4096, g.shape[0])
+            gs = g[torch.randint(0, g.shape[0], (k,), device=g.device)]
+            nn = torch.cdist(gs, anchor_xyz).min(dim=1).values
+            loss = loss + anchor_weight * (nn ** 2).mean()
 
         loss.backward()
 
@@ -267,6 +293,10 @@ if __name__ == "__main__":
     parser.add_argument('--disable_viewer', action='store_true', default=False)
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
+    parser.add_argument("--gsnet_anchor", type=str, default="",
+                        help="ply of GS-Net predicted points; anchor optimization to it (persistent prior)")
+    parser.add_argument("--anchor_weight", type=float, default=0.0)
+    parser.add_argument("--anchor_until", type=int, default=0, help="0 = whole training")
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
     
@@ -279,7 +309,8 @@ if __name__ == "__main__":
     if not args.disable_viewer:
         network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
-    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from)
+    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from,
+             anchor_ply=args.gsnet_anchor, anchor_weight=args.anchor_weight, anchor_until=args.anchor_until)
 
     # All done
     print("\nTraining complete.")

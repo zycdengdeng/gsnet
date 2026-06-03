@@ -112,6 +112,9 @@ def main():
                          "init from source-view densification washout)")
     ap.add_argument("--image_feats", action="store_true",
                     help="pass --image_feats <images_dir> to infer (for image-conditioned models)")
+    ap.add_argument("--anchor_weight", type=float, default=0.0,
+                    help=">0: also anchor 3DGS optimization to the GS-Net prediction "
+                         "(persistent prior, not just init)")
     args = ap.parse_args()
     args.train_extra = args.train_extra.split()
 
@@ -173,8 +176,10 @@ def main():
                 if args.image_feats:
                     infer_cmd += ["--image_feats", images_dir(scene)]
                 infer_s = run(infer_cmd, gpu)
-                metrics, s = optimize_eval(source, mp, args.iterations,
-                                           ["--gsnet_init", init_ply, *args.train_extra], gpu)
+                extra = ["--gsnet_init", init_ply, *args.train_extra]
+                if args.anchor_weight > 0:   # GS-Net as persistent prior (init + anchor)
+                    extra += ["--gsnet_anchor", init_ply, "--anchor_weight", str(args.anchor_weight)]
+                metrics, s = optimize_eval(source, mp, args.iterations, extra, gpu)
                 res = {**metrics, "infer_seconds": infer_s, "optim_seconds": s,
                        "total_seconds": infer_s + s}
             with lock:
