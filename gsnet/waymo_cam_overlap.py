@@ -105,6 +105,30 @@ def main():
                    "cross-sensor likely ~0 regardless of method)")
         print(f"  VERDICT: {verdict}")
 
+        # --- leave-one-camera-out: which target is best covered by the rest? ---
+        cams = sorted(rows)
+        print("\n  Leave-one-camera-out coverage (target covered by the OTHER 4):")
+        loco = {}
+        for t in cams:
+            others = set().union(*[rows[c]["pts"] for c in cams if c != t])
+            cov = len(rows[t]["pts"] & others) / max(len(rows[t]["pts"]), 1)
+            loco[t] = cov
+            tag = " <- most viable target" if cov == max(
+                len(rows[x]["pts"] & set().union(*[rows[c]["pts"] for c in cams if c != x]))
+                / max(len(rows[x]["pts"]), 1) for x in cams) else ""
+            print(f"    synth {t}: {cov*100:.1f}% covered by others{tag}")
+        # --- pairwise IoU of observed point sets ---
+        print("  Pairwise overlap (|ci∩cj|/|ci∪cj|):")
+        hdr = "        " + " ".join(f"{c:>5}" for c in cams)
+        print(hdr)
+        for ci in cams:
+            cells = []
+            for cj in cams:
+                a, b = rows[ci]["pts"], rows[cj]["pts"]
+                iou = len(a & b) / max(len(a | b), 1)
+                cells.append(f"{iou*100:4.0f}%")
+            print(f"    {ci:>4} " + " ".join(cells))
+
         # top-down scatter (optional)
         try:
             import matplotlib

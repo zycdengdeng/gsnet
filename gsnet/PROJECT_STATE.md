@@ -25,7 +25,7 @@
 6. **相似度**：CARLA场景比Waymo紧(逐段0.21 vs 0.32)→解释CARLA跨场景也灵。
 7. **场景310**：所有seed都崩(init正常,优化病理)→诚实排除。**510(−0.49)正常勿丢**。
 8. **310清算完成(reaggregate.py剔310)**：所有rebuttal结论剔310后**都成立且更干净、无需重跑**——Reviewer A(encoder最终配方顶4打平+1.8~2.1)、Reviewer C(优雅降级)、最终配方T5@M3(T5=27.19最好)、主表SSE+1.69。详见§0.00。
-9. **⭐CSE washout确认=真增益(2026-06-03)**：CARLA CSE×**densify-off**(剔310,`runs/cse_densify_off`)=base17.10/gsnet18.38→**Δ+1.28**(vs densify-on +0.02),LPIPS0.346→0.295,优化快40%(23.6→14.8min)。→**GS-Net多视角一致init对跨传感器真有用,只是被30k源视角密化磨平**。⚠️tradeoff:densify-off绝对PSNR更低(18.38<19.65),故只能**同设置内**比;写法=效率/预算角度(同预算/不靠激进密化时+1.3+LPIPS+收敛快)或扫densify_until_iter找甜点。**⇒对Waymo启示:Waymo跨传感器(waymo5_cse,front→side)×densify-off是最有希望的Waymo赢法**(已给waymo_sse加--train_extra)。
+9. **⭐CSE washout确认=真增益(2026-06-03)**：CARLA CSE×**densify-off**(剔310,`runs/cse_densify_off`)=base17.10/gsnet18.38→**Δ+1.28**(vs densify-on +0.02),LPIPS0.346→0.295,优化快40%(23.6→14.8min)。→**GS-Net多视角一致init对跨传感器真有用,只是被30k源视角密化磨平**。⚠️tradeoff:densify-off绝对PSNR更低(18.38<19.65),故只能**同设置内**比;写法=效率/预算角度(同预算/不靠激进密化时+1.3+LPIPS+收敛快)或扫densify_until_iter找甜点。**⇒Waymo跨传感器赢法**:已给waymo_sse加--train_extra。⚠️**但 front→side 经`waymo_cam_overlap`查实=死局**:侧视点被前视覆盖仅**6-9%**(cam3/4垂直±y,前视组最多45°,大视角跳变+SfM匹配失败)→front→side注定≈0,**别跑**。改走:①留一相机(合成被其余4相机覆盖最好的,LOCO);②**稀疏时序×精简变体×densify-off**(同相机少帧=已观测但欠约束,避开'未观测'死穴,更看好)。`waymo_cam_overlap`已扩LOCO+两两重叠矩阵,待用户跑挑viable目标。
 
 **🎯 唯一在打的目标 = 让 Waymo 转正（不改网络/行文）**——三杠杆：
 - **L1 去有害成分**：属性消融(`run_waymo_ablation`,跑中)→ no_opacity/dens_only 能否把−0.9拉向正？(假设opacity是真实数据坏/不可迁移因子)
