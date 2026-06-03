@@ -39,6 +39,7 @@ VARIANTS = {
     "no_opacity":   ["--no_opacity"],
     "no_color":     ["--no_color"],
     "no_scale_rot": ["--no_scale_rot"],
+    "xyz_rgb":      ["--no_opacity", "--no_scale_rot"],   # predict position + color only
     "dens_only":    ["--no_color", "--no_opacity", "--no_scale_rot"],
 }
 
