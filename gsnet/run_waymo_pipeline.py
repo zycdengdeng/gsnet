@@ -71,15 +71,22 @@ def main():
             "--w_rot", "0.1", "--w_pos", "10", "--T", "5", "--M", "3",
             "--in_memory", "1", "--epochs", str(args.epochs)], args.gpus[:1])
 
-    # 4) SSE (baseline sparse-SfM init vs GS-Net init) on the held-out test scenes
-    sh([PY, "-m", "gsnet.waymo_sse", "--root", args.root, "--test_scenes", *args.test_scenes,
-        "--ckpt", ckpt, "--out_dir", sse, "--n_holdout", str(args.n_holdout),
-        "--iterations", str(args.iterations), "--gpus", *[str(g) for g in args.gpus]])
+    # 4) SSE on the held-out test scenes — TWO variants so we come back to the
+    #    full picture: (a) standard densify-on; (b) densify-off (preserves the
+    #    GS-Net init from being washed out -> the variant most likely to show a
+    #    positive in this sparse regime, per the CARLA-CSE finding).
+    sse_off = sse + "_doff"
+    for out, ex in ((sse, []), (sse_off, ["--train_extra", "--densify_until_iter 0"])):
+        sh([PY, "-m", "gsnet.waymo_sse", "--root", args.root, "--test_scenes", *args.test_scenes,
+            "--ckpt", ckpt, "--out_dir", out, "--n_holdout", str(args.n_holdout),
+            "--iterations", str(args.iterations), "--gpus", *[str(g) for g in args.gpus], *ex])
 
-    md = os.path.join(sse, "sse_results.md")
-    if os.path.exists(md):
-        print("\n===== SSE RESULT =====\n" + open(md).read())
-    print(f"\nDone. SSE -> {sse}/sse_results.md")
+    print("\n=================== FINAL Waymo SSE (sparse wide-baseline) ===================")
+    for label, out in (("densify-ON ", sse), ("densify-OFF", sse_off)):
+        md = os.path.join(out, "sse_results.md")
+        if os.path.exists(md):
+            print(f"\n----- {label} ({out}) -----\n" + open(md).read())
+    print(f"\nDone. Results -> {sse}/sse_results.md  and  {sse_off}/sse_results.md")
 
 
 if __name__ == "__main__":
