@@ -39,6 +39,9 @@ def main():
     ap.add_argument("--gpus", type=int, nargs="+", default=[0, 1, 2, 3, 4, 5, 6, 7])
     ap.add_argument("--n_holdout", type=int, default=2, help="SSE frames held out per camera")
     ap.add_argument("--gdense_iter", type=int, default=30000)
+    ap.add_argument("--gdense_train_extra", default="",
+                    help="passthrough to gdense's train.py, e.g. "
+                         "\"--densify_grad_threshold 0.0004\" (anti-OOM on sparse scenes)")
     ap.add_argument("--epochs", type=int, default=200)
     ap.add_argument("--iterations", type=int, default=30000)
     args = ap.parse_args()
@@ -47,8 +50,11 @@ def main():
     gdense, corr, model, sse = (os.path.join(o, x) for x in ("gdense", "corr", "model", "sse"))
 
     # 1) G_dense (pseudo-GT) for ALL scenes (3DGS from MVS fused.ply, resumable)
-    sh([PY, "-m", "gsnet.waymo_gdense", "--root", args.root, "--out_dir", gdense,
-        "--iterations", str(args.gdense_iter), "--gpus", *[str(g) for g in args.gpus]])
+    gd_cmd = [PY, "-m", "gsnet.waymo_gdense", "--root", args.root, "--out_dir", gdense,
+              "--iterations", str(args.gdense_iter), "--gpus", *[str(g) for g in args.gpus]]
+    if args.gdense_train_extra:
+        gd_cmd += ["--train_extra", args.gdense_train_extra]
+    sh(gd_cmd)
 
     # 2) sparse->dense correspondences for TRAINING scenes (test held out)
     sh([PY, "-m", "gsnet.waymo_corr", "--root", args.root, "--gdense_dir", gdense,

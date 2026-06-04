@@ -43,7 +43,11 @@ def main():
     ap.add_argument("--scenes", nargs="+", default=None, help="segment names (default: all)")
     ap.add_argument("--gpus", type=int, nargs="+", default=[2, 3, 4, 5, 6, 7])
     ap.add_argument("--iterations", type=int, default=30000)
+    ap.add_argument("--train_extra", default="",
+                    help="extra args to train.py, e.g. \"--densify_grad_threshold 0.0004\" "
+                         "to cap densification (anti-OOM on wide-baseline sparse scenes)")
     args = ap.parse_args()
+    extra = args.train_extra.split()
 
     scenes = ([os.path.join(args.root, s) for s in args.scenes]
               if args.scenes else discover_scenes(args.root))
@@ -70,10 +74,12 @@ def main():
             run([PY, "train.py", "-s", dense_dir(scene), "-m", mp,
                  "--init_pcd", fused_ply(scene),
                  "--iterations", it, "--test_iterations", it,
-                 "--save_iterations", it, "--disable_viewer", "--quiet"], gpu)
+                 "--save_iterations", it, "--disable_viewer", "--quiet", *extra], gpu)
             with lock:
                 results[seg_name(scene)] = {"gdense": gd, "seconds": time.time() - t0}
             print(f"[done] {seg_name(scene)} -> {gd}")
+        except Exception as e:                       # one scene's OOM must not abort the batch
+            print(f"[FAILED] {seg_name(scene)}: {e}", flush=True)
         finally:
             gpu_q.put(gpu)
 
