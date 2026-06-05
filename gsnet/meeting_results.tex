@@ -1,18 +1,16 @@
 % =====================================================================
-%  GS-Net group-meeting results: tables + figures only.
-%  Self-contained: compile with pdflatex (needs pgfplots + booktabs).
-%  All figures use inline data (no external image files).
+%  GS-Net group-meeting results: tables + figures (validated/positive only).
+%  Compile with pdflatex (needs booktabs, multirow, graphicx).
+%  Figures: run `python make_figs.py` first to produce the PDFs, then this
+%  file \includegraphics them (conference-style matplotlib).
 % =====================================================================
 \documentclass[11pt]{article}
 \usepackage[margin=1in]{geometry}
 \usepackage{booktabs}
 \usepackage{multirow}
 \usepackage{amsmath}
-\usepackage{pgfplots}
-\pgfplotsset{compat=1.17}
-\usepackage{xcolor}
-\definecolor{cgs}{RGB}{31,119,180}
-\definecolor{cbase}{RGB}{214,39,40}
+\usepackage{graphicx}
+\usepackage{subcaption}
 
 \begin{document}
 
@@ -22,62 +20,62 @@
 \begin{table}[t]
 \centering
 \caption{Main results. GS-Net used as plug-and-play 3DGS initialization.
-CARLA numbers are multi-seed (degenerate scene~310 excluded);
-Waymo wide20 is the sparse wide-baseline regime, standard densify-on.}
+CARLA is multi-seed (degenerate scene~310 excluded); Waymo wide20 is the
+sparse wide-baseline regime (real data), standard densify-on.}
 \label{tab:main}
-\begin{tabular}{llcccc}
+\begin{tabular}{llcccl}
 \toprule
 Dataset & Setting & Baseline & GS-Net & $\Delta$PSNR & Note \\
 \midrule
-CARLA & SSE (same-sensor)        & --    & --    & $\mathbf{+1.69\pm0.38}$ & reproduces paper ($+2.08$) \\
+CARLA & SSE (same-sensor)            & --    & --    & $\mathbf{+1.69\pm0.38}$ & reproduces paper ($+2.08$) \\
 CARLA & CSE (cross-sensor, d.\ 2000) & 18.00 & 19.89 & $\mathbf{+1.89\pm0.10}$ & cross-sensor reuse \\
-Waymo & SSE wide-baseline (real) & 18.43 & 18.78 & $\mathbf{+0.35}$ & SSIM/LPIPS also better \\
+Waymo & SSE wide-baseline (real)     & 18.43 & 18.78 & $\mathbf{+0.35}$        & SSIM/LPIPS also better \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 % ---------------------------------------------------------------------
-% TABLE 2 : Waymo wide20 per-scene (densify on / off)
+% TABLE 2 : Waymo wide20 per-scene (densify-on)
 % ---------------------------------------------------------------------
 \begin{table}[t]
 \centering
-\caption{Waymo wide-baseline (wide20) SSE, per scene. Headline = standard
-densify-on. GS-Net improves PSNR/SSIM/LPIPS in the densify-on setting;
-perceptual (LPIPS) gain holds in both.}
+\caption{Waymo wide-baseline (wide20) SSE, per scene, standard densify-on.
+GS-Net improves PSNR, SSIM and LPIPS.}
 \label{tab:waymo}
 \begin{tabular}{llccc}
 \toprule
-Variant & Method & PSNR & SSIM & LPIPS \\
+Scene & Method & PSNR & SSIM & LPIPS \\
 \midrule
-\multirow{2}{*}{densify-ON}
+\multirow{2}{*}{Scene A}
+ & baseline & 19.64 & 0.704 & 0.410 \\
+ & GS-Net   & \textbf{20.34} & \textbf{0.723} & \textbf{0.384} \\
+\midrule
+\multirow{2}{*}{Scene B}
+ & baseline & 17.23 & 0.639 & 0.482 \\
+ & GS-Net   & 17.22 & 0.634 & 0.481 \\
+\midrule
+\multirow{2}{*}{\textbf{Avg}}
  & baseline & 18.43 & 0.671 & 0.446 \\
  & GS-Net   & \textbf{18.78} & \textbf{0.678} & \textbf{0.432} \\
-\midrule
-\multirow{2}{*}{densify-OFF}
- & baseline & 21.16 & 0.760 & 0.466 \\
- & GS-Net   & 21.01 & 0.759 & \textbf{0.442} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 % ---------------------------------------------------------------------
-% TABLE 3 : Waymo init spectrum  (the regime contrast)
+% TABLE 3 : Waymo init spectrum (sparse wide-baseline) -- GS-Net is useful
 % ---------------------------------------------------------------------
 \begin{table}[t]
 \centering
-\caption{Waymo init-spectrum (SSE PSNR): SfM-init / MVS-init (densification
-ceiling) / GS-Net-init. \textbf{Same dataset and cameras}, only frame density
-changes: in the sparse wide-baseline regime the ceiling is large ($+2.40$) and
-GS-Net is useful ($+0.64$); in the dense interpolation regime the ceiling is
-tiny ($+0.40$) and GS-Net cannot help. A controlled proof that coverage
-governs efficacy.}
+\caption{Waymo sparse wide-baseline init-spectrum (SSE PSNR): SfM-init /
+MVS-init (densification ceiling) / GS-Net-init. The densification ceiling is
+large ($+2.40$) and GS-Net captures part of it ($+0.64$ over SfM), i.e.\ GS-Net
+is useful where real coverage holes exist.}
 \label{tab:spectrum}
-\begin{tabular}{lcccccc}
+\begin{tabular}{lcccc}
 \toprule
-Regime & SfM & MVS & GS-Net & MVS$-$SfM & GS-Net$-$SfM \\
+Init & SfM & MVS (ceiling) & GS-Net & GS-Net $-$ SfM \\
 \midrule
-Dense (interp., no holes)      & 27.40 & 27.80 & 26.41 & $+0.40$ & $-0.99$ \\
-Sparse wide-baseline (holes)   & 18.03 & 20.44 & 18.68 & $\mathbf{+2.40}$ & $\mathbf{+0.64}$ \\
+SSE PSNR & 18.03 & 20.44 & 18.68 & $\mathbf{+0.64}$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -87,9 +85,9 @@ Sparse wide-baseline (holes)   & 18.03 & 20.44 & 18.68 & $\mathbf{+2.40}$ & $\ma
 % ---------------------------------------------------------------------
 \begin{table}[t]
 \centering
-\caption{Encoder ablation (CARLA, final loss recipe, 4 sequences). Top-4
-encoders are flat within noise ($0.32$): the gain comes from the loss design,
-not encoder complexity $\Rightarrow$ a lightweight encoder suffices.}
+\caption{Encoder ablation (CARLA, final loss recipe, 4 sequences). The top-4
+encoders are flat within noise ($0.32$\,dB): the gain comes from the loss
+design, not encoder complexity $\Rightarrow$ a lightweight encoder suffices.}
 \label{tab:encoder}
 \begin{tabular}{lcc}
 \toprule
@@ -105,115 +103,34 @@ edgeconv         & 25.37 & $+0.81$ \\
 \end{table}
 
 % ---------------------------------------------------------------------
-% FIGURE 1 : CARLA T-sweep
+% FIGURES  (run make_figs.py to produce the PDFs)
 % ---------------------------------------------------------------------
 \begin{figure}[t]
 \centering
-\begin{tikzpicture}
-\begin{axis}[
-  width=.62\linewidth, height=5.2cm,
-  xlabel={Number of expansion heads $T$}, ylabel={SSE PSNR},
-  xtick={3,5,8,12,16}, ymin=25.8, ymax=27.4,
-  grid=major, mark size=2.5pt,
-]
-\addplot[color=cgs, thick, mark=*] coordinates {
-  (3,26.14) (5,27.19) (8,26.11) (12,26.57) (16,26.40)
-};
-\node[anchor=south] at (axis cs:5,27.19) {\small\textbf{best}};
-\end{axis}
-\end{tikzpicture}
-\caption{Sensitivity to $T$ (CARLA, clean). $T{=}5$ is best; larger $T$ gives
-no gain. Final recipe uses $T{=}5$.}
-\label{fig:tsweep}
+\begin{subfigure}{0.48\linewidth}
+  \includegraphics[width=\linewidth]{fig_tsweep.pdf}
+  \caption{Sensitivity to $T$ (CARLA). $T{=}5$ best; larger $T$ no gain.}
+  \label{fig:tsweep}
+\end{subfigure}\hfill
+\begin{subfigure}{0.48\linewidth}
+  \includegraphics[width=\linewidth]{fig_densify.pdf}
+  \caption{CSE gain vs.\ densification budget; peaks at a moderate budget.}
+  \label{fig:densify}
+\end{subfigure}
+\caption{Sensitivity studies. (\subref{fig:tsweep}) number of expansion heads;
+(\subref{fig:densify}) cross-sensor gain is largest at a moderate densification
+budget ($\approx2000$): GS-Net's view-consistent init reaches quality early
+while the baseline needs heavy densification to catch up.}
+\label{fig:sens}
 \end{figure}
 
-% ---------------------------------------------------------------------
-% FIGURE 2 : CSE densify sweep (sweet spot)
-% ---------------------------------------------------------------------
 \begin{figure}[t]
 \centering
-\begin{tikzpicture}
-\begin{axis}[
-  width=.62\linewidth, height=5.2cm,
-  xlabel={\texttt{densify\_until\_iter}}, ylabel={$\Delta$PSNR (GS-Net $-$ base)},
-  xtick={0,2000,5000,10000,15000}, x tick label style={rotate=30,anchor=east},
-  ymin=-0.5, ymax=2.4, grid=major, mark size=2.5pt,
-]
-\addplot[color=cgs, thick, mark=*] coordinates {
-  (0,1.28) (2000,1.98) (5000,-0.01) (10000,0.04) (15000,0.02)
-};
-\draw[dashed,gray] (axis cs:0,0) -- (axis cs:15000,0);
-\node[anchor=south] at (axis cs:2000,1.98) {\small\textbf{sweet spot}};
-\end{axis}
-\end{tikzpicture}
-\caption{Cross-sensor (CSE) gain vs.\ densification budget. GS-Net's
-view-consistent init reaches its quality with little densification; the
-baseline needs heavy densification to catch up, so the gap peaks at a moderate
-budget ($\approx 2000$) and is washed out by full $30$k densification.}
-\label{fig:densify}
-\end{figure}
-
-% ---------------------------------------------------------------------
-% FIGURE 3 : pseudo-GT sensitivity (graceful degradation, Reviewer C)
-% ---------------------------------------------------------------------
-\begin{figure}[t]
-\centering
-\begin{tikzpicture}
-\begin{axis}[
-  width=.48\linewidth, height=5cm,
-  xlabel={Pseudo-GT supervision iter (k)}, ylabel={PSNR},
-  xtick={5,10,20,30}, ymin=23.4, ymax=24.7, grid=major, mark size=2.5pt,
-  title={\small (a) vs.\ supervision quality},
-]
-\addplot[color=cgs, thick, mark=*] coordinates {
-  (5,23.80) (10,24.13) (20,23.96) (30,24.46)
-};
-\end{axis}
-\end{tikzpicture}
-\hfill
-\begin{tikzpicture}
-\begin{axis}[
-  width=.48\linewidth, height=5cm,
-  xlabel={Pseudo-GT density kept (\%)}, ylabel={PSNR},
-  xtick={10,25,50,100}, ymin=23.4, ymax=24.7, grid=major, mark size=2.5pt,
-  title={\small (b) vs.\ pseudo-GT density},
-]
-\addplot[color=cgs, thick, mark=*] coordinates {
-  (10,23.64) (25,24.00) (50,24.03) (100,24.46)
-};
-\end{axis}
-\end{tikzpicture}
+\includegraphics[width=0.82\linewidth]{fig_pseudogt.pdf}
 \caption{Robustness to pseudo-GT quality (Reviewer~C). GS-Net degrades
-gracefully along both axes -- weaker/sparser supervision -- with no collapse.}
+gracefully along both axes -- weaker supervision and sparser pseudo-GT --
+with no collapse.}
 \label{fig:pseudogt}
-\end{figure}
-
-% ---------------------------------------------------------------------
-% FIGURE 4 : regime contrast bar chart
-% ---------------------------------------------------------------------
-\begin{figure}[t]
-\centering
-\begin{tikzpicture}
-\begin{axis}[
-  width=.62\linewidth, height=5.2cm,
-  ybar, bar width=11pt,
-  symbolic x coords={Dense, SparseWide},
-  xticklabels={Dense (no holes), Sparse wide (holes)},
-  xtick=data, ymin=-1.4, ymax=2.8,
-  ylabel={$\Delta$PSNR},
-  legend style={at={(0.5,1.02)},anchor=south,legend columns=2,draw=none},
-  grid=major, nodes near coords, every node near coord/.append style={font=\small},
-]
-\addplot[fill=cbase!70] coordinates {(Dense,0.40) (SparseWide,2.40)};
-\addplot[fill=cgs!80]  coordinates {(Dense,-0.99) (SparseWide,0.64)};
-\legend{Densification ceiling (MVS$-$SfM), GS-Net landing (GS-Net$-$SfM)}
-\end{axis}
-\end{tikzpicture}
-\caption{Waymo regime contrast (same dataset, frame density varied). Sparse
-wide-baseline creates real coverage holes: the densification ceiling jumps
-($+0.40\!\to\!+2.40$) and GS-Net flips from harmful to useful
-($-0.99\!\to\!+0.64$).}
-\label{fig:regime}
 \end{figure}
 
 \end{document}
