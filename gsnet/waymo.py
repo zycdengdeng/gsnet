@@ -17,7 +17,16 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def discover_scenes(root):
-    return sorted(glob.glob(os.path.join(root, "segment-*")))
+    """All scene dirs under root. Dataset-agnostic: matches any immediate
+    subdirectory that holds a COLMAP model (colmap/ or sparse/), so it works for
+    Waymo (segment-*), nuScenes (scene-*), CARLA, etc. without renaming."""
+    out = []
+    for p in sorted(glob.glob(os.path.join(root, "*"))):
+        if os.path.isdir(p) and (os.path.isdir(os.path.join(p, "colmap"))
+                                 or os.path.isdir(os.path.join(p, "sparse"))):
+            out.append(p)
+    # Back-compat: if nothing matched but legacy segment-* dirs exist, use those.
+    return out or sorted(glob.glob(os.path.join(root, "segment-*")))
 
 
 def seg_name(scene_path):
