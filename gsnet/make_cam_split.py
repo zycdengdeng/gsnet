@@ -25,7 +25,21 @@ def _interior_indices(L, n):
     return sorted(set(int(round(x)) for x in np.linspace(0, L - 1, n + 2)[1:-1]))
 
 
-def cam_split_test_names(source, n_holdout=4):
+def _holdout_indices(L, n, mode):
+    """Which frame indices (per camera) to hold out as test.
+    mode='interp' : n interior frames spread out (interpolation; default, easy,
+                    no coverage holes -- frames sit between training frames).
+    mode='extrap' : the LAST n frames (forward EXTRAPOLATION; the ego drives into
+                    a region only glimpsed from afar in training -> real holes,
+                    the regime where an init prior can actually help)."""
+    if n >= L:
+        return list(range(L))
+    if mode == "extrap":
+        return list(range(L - n, L))
+    return _interior_indices(L, n)
+
+
+def cam_split_test_names(source, n_holdout=4, mode="interp"):
     sparse = os.path.join(source, "sparse", "0")
     try:
         extr = read_extrinsics_binary(os.path.join(sparse, "images.bin"))
@@ -40,17 +54,17 @@ def cam_split_test_names(source, n_holdout=4):
     test = []
     for cam, ns in sorted(groups.items()):
         ns = sorted(ns)
-        idx = _interior_indices(len(ns), n_holdout)
+        idx = _holdout_indices(len(ns), n_holdout, mode)
         test.extend(ns[i] for i in idx)
     return sorted(test)
 
 
-def write_cam_split(source, n_holdout=4):
-    names = cam_split_test_names(source, n_holdout)
+def write_cam_split(source, n_holdout=4, mode="interp"):
+    names = cam_split_test_names(source, n_holdout, mode)
     out = os.path.join(source, "sparse", "0", "test.txt")
     with open(out, "w") as f:
         f.write("\n".join(names) + "\n")
-    print(f"[split] {out}: {len(names)} test images ({n_holdout}/camera) -> {names}")
+    print(f"[split] {out}: {len(names)} test images ({n_holdout}/camera, {mode}) -> {names}")
     return out
 
 

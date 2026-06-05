@@ -70,6 +70,9 @@ def main():
     ap.add_argument("--out_dir", default="runs/waymo5_initcmp")
     ap.add_argument("--gpus", type=int, nargs="+", default=[0, 1, 2, 3])
     ap.add_argument("--n_holdout", type=int, default=4)
+    ap.add_argument("--holdout_mode", choices=["interp", "extrap"], default="interp",
+                    help="interp=interior frames (no holes, easy); "
+                         "extrap=last-N frames per camera (forward extrapolation, real holes)")
     ap.add_argument("--iterations", type=int, default=30000)
     ap.add_argument("--image_feats", action="store_true")
     ap.add_argument("--train_extra", default="", help="e.g. \"--densify_until_iter 0\"")
@@ -82,7 +85,7 @@ def main():
     src_by = {}
     for sc in scenes:
         src = scene_source(sc, tag)
-        write_cam_split(src, args.n_holdout)
+        write_cam_split(src, args.n_holdout, args.holdout_mode)
         src_by[sc] = src
 
     jobs = [(sc, cfg) for sc in scenes for cfg in ("sfm", "mvs", "gsnet")]

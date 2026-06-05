@@ -97,6 +97,9 @@ def main():
     ap.add_argument("--gpus", type=int, nargs="+", default=[1, 7])
     ap.add_argument("--iterations", type=int, default=30000)
     ap.add_argument("--n_holdout", type=int, default=4)
+    ap.add_argument("--holdout_mode", choices=["interp", "extrap"], default="interp",
+                    help="interp=interior frames (no holes); extrap=last-N frames "
+                         "per camera (forward extrapolation, real coverage holes)")
     ap.add_argument("--skip_baseline", action="store_true")
     ap.add_argument("--skip_gsnet", action="store_true")
     ap.add_argument("--target_cams", nargs="+", default=[],
@@ -136,7 +139,7 @@ def main():
             write_camera_split(src, args.target_cams)
         else:
             src = scene_source(sc, tag)
-            write_cam_split(src, args.n_holdout)
+            write_cam_split(src, args.n_holdout, args.holdout_mode)
         src_by_scene[sc] = src
     args._src_by_scene = src_by_scene
 
