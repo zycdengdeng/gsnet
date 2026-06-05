@@ -1,7 +1,7 @@
 # GS-Net 项目状态与交接文档 (PROJECT STATE)
 
 > **用途**：记忆压缩后的"续命"文档。读完即可完整理解任务/数据/代码/流程/结果/当前路径，性能不退化。
-> **最后更新**：2026-06-05（🚨修正:Waymo +0.35=坏基线artifact(过度密化打坏base到18);调好基线21 GS-Net≈持平略负→Waymo尚无可信正结果;CARLA两正 SSE+1.69/CSE+1.89仍硬;判生死=run_wide20_dsweep(3init×密化)在跑；见 §0.000 速览）
+> **最后更新**：2026-06-05（🔚Waymo PSNR封死定论:firming(5场景)Δ−0.52/−0.41全负+dsweep证"+2.4天花板=过度密化假象,可信基线off真天花板仅+0.71/GS-Net−0.14";+0.35是2场景噪声。CARLA两正 SSE+1.69/CSE+1.89仍硬。建议转nuScenes环视；见 §0.000 速览）
 > **分支**：`claude/festive-feynman-80Vw3`（push 到此；用户服务器 `git pull`）
 
 ---
@@ -20,7 +20,8 @@
 - **PSNR 正结果(主表,均多seed钉死)**：CARLA SSE **+1.69±0.38**(排崩坏场景310,复现论文+2.08)；CARLA CSE **+1.89±0.1**(densify=2000甜点,gsnet19.89/base18.00;densify-off+1.28/默认+0.02=baseline靠满密化追平)。
 - **🚨Waymo +0.35 是假阳性(2026-06-05 修正,用户质疑基线)——别再当正结果引用!**：wide20 SSE-on **gsnet18.78/base18.43=+0.35** 是在**被过度密化打坏的坏工作点(base仅18)**上赢的。把4配置摆齐:**densify-ON base18.43/gsnet18.78(+0.35) vs densify-OFF base21.16/gsnet21.01(−0.15)**。**调好的健康基线=21.16(SfM+densify-off),GS-Net反而略输。** 根因:默认`densify_grad_threshold=0.0002`是给上百帧稠密调的,wide20每相机仅~30宽基线图→疯狂clone高斯过拟合源视角→base暴跌十几;关密化才回21。**⇒+0.35不是真赢,是坏基线artifact。meeting_results.tex的Waymo +0.35待dsweep后重写。**
 - **📐published基线锚点(2026-06-05调研)**:vanilla 3DGS街景NVS:**Waymo≈25.77**(S³GS表)/方法28-31(EmerNeRF28.87/StreetGS/PVG/DistillNeRF29.84);**nuScenes≈25-27**(S-NeRF25.43/PVG26.9/DrivingGaussian-LiDAR28.74)。→**我们稠密Waymo base=27.40正好落区间=管线对**;wide20 densify-off=21=苛刻稀疏(8帧无LiDAR)的合理low-20s(若框成sparse-view NVS引FSGS/DNGaussian则可信),densify-on=18=过度密化bug。**十几≠Waymo基线真实水平。**
-- **🎯判生死实验在跑(`run_wide20_dsweep`)**:4档密化×3init(SfM/MVS/GS-Net),每个在基线最强点比。`runs/wide20_dsweep/dsweep.md`。**决策树**:①best-MVS≫best-SfM(调好密化MVS仍超SfM)=天花板在=GS-Net只吃0.64是**预测质量问题(可修:砸更多宽基线训练场景15→50+/更好G_dense)**=真有效的路;②best-MVS≈best-SfM=任何init都没空间=Waymo PSNR封死=转效率/CARLA主线。**用户选'先等sweep再决定'是否产更多数据。**
+- **🔚Waymo PSNR 封死=定论(2026-06-05,firming+dsweep双证)**:**情形②(closed regime)坐实。**①**firming(5测/15训多seed,`runs/wide20_5test/firm_summary.md`)**:densify-ON Δ=**−0.52±0.21**(3seed全负)/densify-OFF Δ=**−0.41**→+0.35是2场景噪声,5场景两设置全负。②**dsweep(`runs/wide20_dsweep/dsweep.md`)**:密化default→off时SfM基线17.63→**21.10**爬升、天花板(MVS−SfM)+2.71→**+0.71**塌缩→**那个+2.40/+2.71天花板是过度密化打坏SfM造的假象**;可信基线(off,21.10)下真天花板仅+0.71、GS-Net−0.14(比SfM还低,T5扩展无密化清理时加噪)。**⇒别砸数据修预测**:完美MVS上限也才+0.71且5场景大概率抖到0,不划算。**根因**:Waymo前向走廊,测试视角近训练视角,可信基线下无可利用覆盖洞,SfM已够。**meeting_results.tex的Waymo行必须撤(只留CARLA+敏感性)。**
+- **➡️真·实数据正结果候选=nuScenes环视(2026-06-05建议)**:nuScenes 6相机环视≈CARLA ring(高共视冗余)≠Waymo前向rig→GS-Net起效的环视regime;published基线~25-27(可信,不用稀疏)。覆盖度分析预测GS-Net在nuScenes比Waymo更可能真有效=最对症的实数据战场。**待用户定是否转nuScenes。**
 - **Waymo 稠密SSE仍负=对照组(证明regime)**：稠密20帧内插所有杠杆失败(within≈cross−0.74/densify-off−0.12/图像条件化−0.50/T全负/砍属性full−0.41最优/收敛各迭代差/合成cam0−4.0/anchor负);initcmp稠密=**天花板+0.40 / gsnet−sfm−0.99**(既低上限又预测差)。
 - **regime对比仍成立但天花板待重测**：稠密天花板+0.40 vs 稀疏+2.40的对比是趋势证据,但**两者都在默认(过度密化)工作点测的**→dsweep会在调好密化的可信基线重测真天花板(best-MVS−best-SfM)。⚠注意:稀疏densify-off下SfM已21.16>MVS(densify-on)20.44→可能调好密化后连MVS都未必超SfM(即天花板可能塌)。
 - **机制(一句话)**：GS-Net = 局部稠密化先验,只在"SfM不足 + 3DGS自带密化补不回"的**覆盖洞/外推regime**有用。**Waymo难点**:GS-Net能赢的区域(无纹理路面/远景/外推)恰是PSNR贡献最低处→几何上PSNR难涨,是结构性的。
