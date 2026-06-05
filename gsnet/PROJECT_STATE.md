@@ -1,7 +1,7 @@
 # GS-Net 项目状态与交接文档 (PROJECT STATE)
 
 > **用途**：记忆压缩后的"续命"文档。读完即可完整理解任务/数据/代码/流程/结果/当前路径，性能不退化。
-> **最后更新**：2026-06-04（CARLA两正钉死 SSE+1.69/CSE+1.89；Waymo所有杠杆负=regime;唯一在跑=wide20稀疏宽基线最后一枪；见 §0.000 速览）
+> **最后更新**：2026-06-05（🎉Waymo转正:wide20稀疏宽基线 SSE-on +0.35/天花板+2.40/落点+0.64,regime假说在Waymo内部自证;CARLA两正 SSE+1.69/CSE+1.89;下一步=firming多场景/seed；见 §0.000 速览）
 > **分支**：`claude/festive-feynman-80Vw3`（push 到此；用户服务器 `git pull`）
 
 ---
@@ -18,11 +18,13 @@
 
 **💎 当前总账（FINAL 口径，2026-06-03；下面为推导细节）**
 - **PSNR 正结果(主表,均多seed钉死)**：CARLA SSE **+1.69±0.38**(排崩坏场景310,复现论文+2.08)；CARLA CSE **+1.89±0.1**(densify=2000甜点,gsnet19.89/base18.00;densify-off+1.28/默认+0.02=baseline靠满密化追平)。
-- **Waymo SSE = PSNR 饱和、翻不正**：所有杠杆全失败(within≈cross−0.74 / densify-off−0.12 / 图像条件化−0.50 / T全负 / 砍属性全负full−0.41最优 / 收敛各迭代都差 / 合成cam0跨传感器−4.0 / anchor仍负)。**initcmp铁证**:密化天花板仅**+0.40**(MVS−SfM)、且GS-Net预测比SfM还差**−0.99**→既低上限又预测差。根因:Waymo 5相机共视**<10%**=不相交前向条带=无覆盖洞;CARLA环视高共视=有洞=GS-Net主场。
+- **🎉Waymo 正结果(2026-06-05,wide20稀疏宽基线翻盘)**：**稀疏regime下 GS-Net 转正**。SSE-on(标准densify-on)**gsnet 18.78 > base 18.43 = +0.35**,LPIPS 0.446→0.432、SSIM↑(15868 +0.70/10275持平);initcmp **mvs−sfm=+2.40(天花板大!) / gsnet−sfm=+0.64(GS-Net有用!)**。⚠SSE-off PSNR−0.15(但LPIPS仍+);⚠样本小(2场景×10测图),同配置两跑Δ抖+0.35~+0.64→正向但需firming(多场景/seed钉死)。
+- **Waymo 稠密SSE仍负=对照组(证明regime)**：稠密20帧内插所有杠杆失败(within≈cross−0.74/densify-off−0.12/图像条件化−0.50/T全负/砍属性full−0.41最优/收敛各迭代差/合成cam0−4.0/anchor负);initcmp稠密=**天花板+0.40 / gsnet−sfm−0.99**(既低上限又预测差)。
+- **⭐⭐regime假说在Waymo内部自证(最强论据)**：同数据集同相机、只改帧密度→GS-Net从"有害"翻"有用"。**稠密(无洞):天花板+0.40/落点−0.99/SSE负 vs 稀疏宽基线(真有洞):天花板+2.40/落点+0.64/SSE+0.35**。共视<10%的稠密内插=GS-Net没空间;稀疏宽基线=真覆盖洞=GS-Net主场。比CARLA-vs-Waymo跨数据集论证强得多。
 - **机制(一句话)**：GS-Net = 局部稠密化先验,只在"SfM不足 + 3DGS自带密化补不回"的**覆盖洞/外推regime**有用。
-- **诚实定位(rebuttal主线)**：用 inter-camera 覆盖度刻画适用域(重叠/环视rig有效=CARLA SSE+1.69/CSE+1.89;宽基线disjoint同传感器=Waymo中性)。Reviewer A(encoder打平、轻量够)/C(优雅降级)都成立(排310)。
+- **诚实定位(rebuttal主线)**：用"覆盖度/视角充分性"刻画适用域——有洞(CARLA环视 / **Waymo稀疏宽基线**)GS-Net有效(CARLA SSE+1.69/CSE+1.89/**Waymo wide20 +0.35**);无洞(Waymo稠密内插)中性偏负。Reviewer A(encoder打平、轻量够)/C(优雅降级)都成立(排310)。
 - **已澄清/埋葬**：28.40=test.txt污染(干净T3=26.70);场景310=优化病理(排除);CORR/waymo5=8干净(过去Waymo结果有效);端到端审计无bug;LiDAR❌不用(论文setting不含);像素对齐❌不做(丢创新)。
-- **🎯进行中=Waymo最后一枪(wide20稀疏宽基线)**：`colmap_input_5cam_wide20`(20场景×8帧宽基线,18训/2测=10275,15868),`run_waymo_pipeline`无人值守跑gdense→corr→train→SSE(on+off),`nohup...>runs/wide20_pipeline.log`。**回来cat**`runs/wide20/sse/sse_results.md`+`runs/wide20/sse_doff/sse_results.md`,**gsnet≥baseline=Waymo有效(用户愿景)**;densify-off最可能转正。两版都负→Waymo PSNR走完,故事=CARLA两正+覆盖度框架。
+- **✅wide20已完成(2026-06-05)=Waymo转正**：`colmap_input_5cam_wide20`(20场景×8帧宽基线,18训/2测=10275,15868),pipeline跑完gdense(20/20,FAILED=0,共卡OOM真因坐实)→corr(18)→train(986s)→SSE-on/off+initcmp。结果见上"🎉Waymo正结果"。**下一步=firming(把+0.35从2场景钉到多场景/多seed)**,见⏳表。
 
 **✅ 已定论（别再质疑/重测）**
 1. **代码正确、CARLA增益真**：CARLA SSE 多seed=**+1.69±0.38**(排崩坏场景310;含310才被拽成+0.22="+0.28"假象)，≈论文+2.08。densify on/off佐证(+1.72/+2.06)→init本身就好、非washout。端到端审计无bug。
@@ -35,12 +37,12 @@
 8. **310清算完成(reaggregate.py剔310)**：所有rebuttal结论剔310后**都成立且更干净、无需重跑**——Reviewer A(encoder最终配方顶4打平+1.8~2.1)、Reviewer C(优雅降级)、最终配方T5@M3(T5=27.19最好)、主表SSE+1.69。详见§0.00。
 9. **⭐CSE washout确认=真增益(2026-06-03)**：CARLA CSE×**densify-off**(剔310,`runs/cse_densify_off`)=base17.10/gsnet18.38→**Δ+1.28**(vs densify-on +0.02),LPIPS0.346→0.295,优化快40%(23.6→14.8min)。→**GS-Net多视角一致init对跨传感器真有用,只是被30k源视角密化磨平**。⚠️tradeoff:densify-off绝对PSNR更低(18.38<19.65),故只能**同设置内**比;写法=效率/预算角度(同预算/不靠激进密化时+1.3+LPIPS+收敛快)或扫densify_until_iter找甜点。**⇒Waymo跨传感器赢法**:已给waymo_sse加--train_extra。⚠️**但 front→side 经`waymo_cam_overlap`查实=死局**:侧视点被前视覆盖仅**6-9%**(cam3/4垂直±y,前视组最多45°,大视角跳变+SfM匹配失败)→front→side注定≈0,**别跑**。改走:①留一相机(合成被其余4相机覆盖最好的,LOCO);②**稀疏时序×精简变体×densify-off**(同相机少帧=已观测但欠约束,避开'未观测'死穴,更看好)。`waymo_cam_overlap`已扩LOCO+两两重叠矩阵,待用户跑挑viable目标。 **结果(2026-06-03)**:两两重叠**全≤9%**(Waymo 5相机近乎互不共视=各自沿路独立条带);LOCO最高=合成cam0(FRONT)被其余4覆盖23%(10275)/38%(15868),其余<20%。**深层结论**:GS-Net机制=利用'多相机共视冗余→SfM空洞'去填;CARLA环视高共视→+1.7,Waymo宽基线rig共视<10%→几乎无结构可利用→中性/微负是几何决定的。**⇒主线rebuttal用'覆盖度刻画适用域'诚实框架**(GS-Net受益重叠/环视rig=CARLA/nuScenes,宽基线disjoint rig=Waymo无效,用inter-cam覆盖量化边界)——比硬凑Waymo增益更强。**仅剩长射**:①合成cam0(唯一覆盖较高)×densify-off×精简变体(赌一把,等消融出dens_only ckpt);②稀疏时序×lean×densify-off(期望一般,稀疏sweep已负)。
 
-**⏳ 唯一在跑/待cat(2026-06-03晚,用户跑完会说,我负责cat)**：
-  | # | 实验 | cat 文件 | 看什么 |
-  |---|---|---|---|
-  | 1 | **wide20稀疏宽基线(Waymo最后一枪)** | `runs/wide20/sse/sse_results.md`(densify-on) + `runs/wide20/sse_doff/sse_results.md`(densify-off,最可能转正) | gsnet vs baseline Avg PSNR哪个≥即'Waymo有效'(用户愿景)。两版都负→Waymo PSNR走完,故事=CARLA两正+覆盖度框架 |
+**⏳ 下一步=把 Waymo 正结果(+0.35,2场景)钉扎实(firming)**：
+  - **问题**:只有2测试场景×10测图,同配置两跑Δ抖+0.35~+0.64→正向但噪声大,主表需更稳的均值±std。
+  - **方案(候选,待用户定)**:①**扩测试集**(20场景中留5测/15训,重训GS-Net+5场景SSE→更稳均值,最强firming,~半小时);②**多seed**(当前2场景跑3-5个3DGS种子,bound方差,便宜但仍只2场景);③两者都做。**算力**:同事在0-3,跑4-7。
+  - **判读**:firming后若 Avg 仍 gsnet≥base(尤其densify-on)→Waymo正结果可写主表(稀疏宽基线regime)。
 
-  **已收并分析(全部DONE,不用再cat)**:①CARLA SSE+1.69±0.38(排310) ②CARLA CSE+1.89±0.1(`cse_d2000_s0-4`多seed,densify2000,钉死) ③init谱系(`waymo5_initcmp`:MVS−SfM=+0.40天花板/GS-Net−SfM=−0.99→既低上限又预测差) ④合成cam0跨传感器(`waymo5_synthcam0`:d2000−4.0/off−0.66=灾难) ⑤收敛曲线(`waymo5_sse_iter*`:3k/7k/15k/30k每迭代都负→路子A证伪) ⑥anchor-loss(`waymo5_anchor_w*`:W越大越不差但仍负) ⑦图像条件化(−0.50) ⑧densify-off(−0.12) ⑨干净T(T3=26.70埋葬28.40,Waymo最优T1仍负) ⑩消融(full−0.41最优,所有lean仍负) ⑪within≈cross/相机共视<10%/各reagg(A/C/T5成立)/CORR=8干净。**已决定不跑**:CARLA消融、像素对齐(丢创新)、LiDAR(论文setting不含)、front→side(共视6-9%死局)。
+  **已收并分析(全部DONE,不用再cat)**:①CARLA SSE+1.69±0.38(排310) ②CARLA CSE+1.89±0.1(`cse_d2000_s0-4`多seed,densify2000,钉死) ③**wide20 SSE-on+0.35/initcmp天花板+2.40/落点+0.64=Waymo转正**(`runs/wide20/sse{,_doff}`,`runs/wide20_initcmp`) ④稠密waymo5_initcmp(MVS−SfM=+0.40/GS-Net−SfM=−0.99=对照组) ⑤合成cam0跨传感器(`waymo5_synthcam0`:d2000−4.0/off−0.66=灾难) ⑥收敛曲线(`waymo5_sse_iter*`:每迭代负→路子A证伪) ⑦anchor-loss(W越大越不差但仍负) ⑧图像条件化(−0.50) ⑨densify-off稠密(−0.12) ⑩干净T(T3=26.70埋葬28.40) ⑪消融(full−0.41最优,lean仍负) ⑫within≈cross/相机共视<10%/各reagg(A/C/T5成立)/CORR=8干净。**已决定不跑**:CARLA消融、像素对齐(丢创新)、LiDAR(论文setting不含)、front→side(共视6-9%死局)。
 
 **📁 关键路径**：Waymo 5cam=`/mnt/zihanw/EmerNeRF/data/waymo/colmap_input_5cam`(8训/2测=10275,15868;cam0前/1FL/2FR/3SL/4SR);`CORR/waymo5`;ckpt`runs/waymo5_gsnet`(T5);within-scene back=`colmap_input_5cam_next20`。CARLA io=`/mnt/zihanw/carla/input_output`,sparse=`/mnt/zihanw/carla/sparse_point`,`CORR/train`,多seed模型`runs/multiseed_sse/model_s{0-4}`。
 **🧠 网络改动:图像条件化GS-Net(2026-06-03,已push)**:消融证明encoder/属性都榨干了→点信息饱和、网络对图像'盲'→喂图像特征(cf pixelSplat)。鲁棒实现:用每点在`images.bin`里的真实2D观测xys采特征(零投影bug),多尺度色/梯度/拉普拉斯(v1手工15维,可升级冻结CNN),按read_points3D顺序对齐。开关`--image_feats`,feat_dim从corr自动检测,旧ckpt(feat_dim=0)向后兼容。链路:`image_feats.py`+model(in_dim=6+feat_dim)+build_correspondences+waymo_corr+dataset+train_gsnet+infer+waymo_sse。**工作流**:waymo_corr --image_feats→CORR/waymo5_img→train_gsnet(自动feat_dim)→runs/waymo5_gsnet_img→waymo_sse --image_feats。**待用户先smoke(F=15/feat_dim=15打印)再全量**。**判读**:有改善→升级CNN特征(真提升量级);没动→特征太弱或SSE无空间(结合共视<10%)。
