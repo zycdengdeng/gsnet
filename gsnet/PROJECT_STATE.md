@@ -1,7 +1,7 @@
 # GS-Net 项目状态与交接文档 (PROJECT STATE)
 
 > **用途**：记忆压缩后的"续命"文档。读完即可完整理解任务/数据/代码/流程/结果/当前路径，性能不退化。
-> **最后更新**：2026-06-05（🎉Waymo转正:wide20稀疏宽基线 SSE-on +0.35/天花板+2.40/落点+0.64,regime假说在Waymo内部自证;CARLA两正 SSE+1.69/CSE+1.89;下一步=firming多场景/seed；见 §0.000 速览）
+> **最后更新**：2026-06-05（🚨修正:Waymo +0.35=坏基线artifact(过度密化打坏base到18);调好基线21 GS-Net≈持平略负→Waymo尚无可信正结果;CARLA两正 SSE+1.69/CSE+1.89仍硬;判生死=run_wide20_dsweep(3init×密化)在跑；见 §0.000 速览）
 > **分支**：`claude/festive-feynman-80Vw3`（push 到此；用户服务器 `git pull`）
 
 ---
@@ -18,13 +18,15 @@
 
 **💎 当前总账（FINAL 口径，2026-06-03；下面为推导细节）**
 - **PSNR 正结果(主表,均多seed钉死)**：CARLA SSE **+1.69±0.38**(排崩坏场景310,复现论文+2.08)；CARLA CSE **+1.89±0.1**(densify=2000甜点,gsnet19.89/base18.00;densify-off+1.28/默认+0.02=baseline靠满密化追平)。
-- **🎉Waymo 正结果(2026-06-05,wide20稀疏宽基线翻盘)**：**稀疏regime下 GS-Net 转正**。SSE-on(标准densify-on)**gsnet 18.78 > base 18.43 = +0.35**,LPIPS 0.446→0.432、SSIM↑(15868 +0.70/10275持平);initcmp **mvs−sfm=+2.40(天花板大!) / gsnet−sfm=+0.64(GS-Net有用!)**。⚠SSE-off PSNR−0.15(但LPIPS仍+);⚠样本小(2场景×10测图),同配置两跑Δ抖+0.35~+0.64→正向但需firming(多场景/seed钉死)。
+- **🚨Waymo +0.35 是假阳性(2026-06-05 修正,用户质疑基线)——别再当正结果引用!**：wide20 SSE-on **gsnet18.78/base18.43=+0.35** 是在**被过度密化打坏的坏工作点(base仅18)**上赢的。把4配置摆齐:**densify-ON base18.43/gsnet18.78(+0.35) vs densify-OFF base21.16/gsnet21.01(−0.15)**。**调好的健康基线=21.16(SfM+densify-off),GS-Net反而略输。** 根因:默认`densify_grad_threshold=0.0002`是给上百帧稠密调的,wide20每相机仅~30宽基线图→疯狂clone高斯过拟合源视角→base暴跌十几;关密化才回21。**⇒+0.35不是真赢,是坏基线artifact。meeting_results.tex的Waymo +0.35待dsweep后重写。**
+- **📐published基线锚点(2026-06-05调研)**:vanilla 3DGS街景NVS:**Waymo≈25.77**(S³GS表)/方法28-31(EmerNeRF28.87/StreetGS/PVG/DistillNeRF29.84);**nuScenes≈25-27**(S-NeRF25.43/PVG26.9/DrivingGaussian-LiDAR28.74)。→**我们稠密Waymo base=27.40正好落区间=管线对**;wide20 densify-off=21=苛刻稀疏(8帧无LiDAR)的合理low-20s(若框成sparse-view NVS引FSGS/DNGaussian则可信),densify-on=18=过度密化bug。**十几≠Waymo基线真实水平。**
+- **🎯判生死实验在跑(`run_wide20_dsweep`)**:4档密化×3init(SfM/MVS/GS-Net),每个在基线最强点比。`runs/wide20_dsweep/dsweep.md`。**决策树**:①best-MVS≫best-SfM(调好密化MVS仍超SfM)=天花板在=GS-Net只吃0.64是**预测质量问题(可修:砸更多宽基线训练场景15→50+/更好G_dense)**=真有效的路;②best-MVS≈best-SfM=任何init都没空间=Waymo PSNR封死=转效率/CARLA主线。**用户选'先等sweep再决定'是否产更多数据。**
 - **Waymo 稠密SSE仍负=对照组(证明regime)**：稠密20帧内插所有杠杆失败(within≈cross−0.74/densify-off−0.12/图像条件化−0.50/T全负/砍属性full−0.41最优/收敛各迭代差/合成cam0−4.0/anchor负);initcmp稠密=**天花板+0.40 / gsnet−sfm−0.99**(既低上限又预测差)。
-- **⭐⭐regime假说在Waymo内部自证(最强论据)**：同数据集同相机、只改帧密度→GS-Net从"有害"翻"有用"。**稠密(无洞):天花板+0.40/落点−0.99/SSE负 vs 稀疏宽基线(真有洞):天花板+2.40/落点+0.64/SSE+0.35**。共视<10%的稠密内插=GS-Net没空间;稀疏宽基线=真覆盖洞=GS-Net主场。比CARLA-vs-Waymo跨数据集论证强得多。
-- **机制(一句话)**：GS-Net = 局部稠密化先验,只在"SfM不足 + 3DGS自带密化补不回"的**覆盖洞/外推regime**有用。
-- **诚实定位(rebuttal主线)**：用"覆盖度/视角充分性"刻画适用域——有洞(CARLA环视 / **Waymo稀疏宽基线**)GS-Net有效(CARLA SSE+1.69/CSE+1.89/**Waymo wide20 +0.35**);无洞(Waymo稠密内插)中性偏负。Reviewer A(encoder打平、轻量够)/C(优雅降级)都成立(排310)。
+- **regime对比仍成立但天花板待重测**：稠密天花板+0.40 vs 稀疏+2.40的对比是趋势证据,但**两者都在默认(过度密化)工作点测的**→dsweep会在调好密化的可信基线重测真天花板(best-MVS−best-SfM)。⚠注意:稀疏densify-off下SfM已21.16>MVS(densify-on)20.44→可能调好密化后连MVS都未必超SfM(即天花板可能塌)。
+- **机制(一句话)**：GS-Net = 局部稠密化先验,只在"SfM不足 + 3DGS自带密化补不回"的**覆盖洞/外推regime**有用。**Waymo难点**:GS-Net能赢的区域(无纹理路面/远景/外推)恰是PSNR贡献最低处→几何上PSNR难涨,是结构性的。
+- **诚实定位(rebuttal主线,Waymo口径下调)**：CARLA两正(SSE+1.69/CSE+1.89)是硬底。**Waymo尚无可信正结果**(+0.35是坏基线artifact;调好基线GS-Net≈持平略负)→待dsweep判:有天花板就砸数据修预测,没天花板就走效率框架。Reviewer A(encoder打平)/C(优雅降级)成立(排310)。
 - **已澄清/埋葬**：28.40=test.txt污染(干净T3=26.70);场景310=优化病理(排除);CORR/waymo5=8干净(过去Waymo结果有效);端到端审计无bug;LiDAR❌不用(论文setting不含);像素对齐❌不做(丢创新)。
-- **✅wide20已完成(2026-06-05)=Waymo转正**：`colmap_input_5cam_wide20`(20场景×8帧宽基线,18训/2测=10275,15868),pipeline跑完gdense(20/20,FAILED=0,共卡OOM真因坐实)→corr(18)→train(986s)→SSE-on/off+initcmp。结果见上"🎉Waymo正结果"。**下一步=firming(把+0.35从2场景钉到多场景/多seed)**,见⏳表。
+- **wide20已完成但结论修正(2026-06-05)**：`colmap_input_5cam_wide20`(20场景×8帧宽基线,18训/2测),pipeline gdense(20/20,FAILED=0)→corr(18)→train(986s)→SSE-on/off+initcmp。**但+0.35=坏基线artifact(见🚨行)**。⚠**firming暂停**:别在坏工作点firming;先等dsweep定可信基线档,再决定firming哪档/是否值得。`run_wide20_firm`(5测/15训多seed)先别跑。
 
 **✅ 已定论（别再质疑/重测）**
 1. **代码正确、CARLA增益真**：CARLA SSE 多seed=**+1.69±0.38**(排崩坏场景310;含310才被拽成+0.22="+0.28"假象)，≈论文+2.08。densify on/off佐证(+1.72/+2.06)→init本身就好、非washout。端到端审计无bug。
