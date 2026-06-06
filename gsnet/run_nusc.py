@@ -98,12 +98,21 @@ def main():
     ap.add_argument("--eval_iters", type=int, nargs="+", default=[7000, 15000, 30000],
                     help="checkpoints to score -> PSNR-vs-iteration convergence curve. "
                          "Last value is the total optimisation length.")
+    ap.add_argument("--gdense_save_iters", type=int, nargs="+", default=[15000, 30000],
+                    help="iterations at which to SAVE G_dense (the supervision target). "
+                         "Saving 15k too (≈free) preserves the option of a cleaner / less "
+                         "view-overfit target than the fully-converged 30k, for a later "
+                         "target-design sweep (build corr from a different iter).")
+    ap.add_argument("--gdense_iter", type=int, default=30000,
+                    help="which saved G_dense iteration to USE as the training target")
     ap.add_argument("--min_free_mb", type=int, default=15000)
     ap.add_argument("--max_retries", type=int, default=5)
     args = ap.parse_args()
 
     eval_iters = sorted(set(args.eval_iters) | {args.iterations})   # always score the final
     final = args.iterations
+    gd_save = sorted(set(args.gdense_save_iters) | {final})          # G_dense checkpoints to save
+    assert args.gdense_iter in gd_save, f"--gdense_iter {args.gdense_iter} not in saved {gd_save}"
     densify = [(f"d{n}", ([] if n == 15000 else ["--densify_until_iter", str(n)]))
                for n in args.densify_iters]
 
@@ -137,9 +146,10 @@ def main():
     def gd_fn(c, gpu):
         if os.path.exists(gd_path(c)):
             return
+        si = [x for i in gd_save for x in ("--save_iterations", str(i))]
         s = on_gpu([PY, "train.py", "-s", dense_dir(c), "-m", os.path.join(gdense, seg_name(c)),
                     "--init_pcd", fused_ply(c), "--iterations", str(final),
-                    "--test_iterations", str(final), "--save_iterations", str(final),
+                    "--test_iterations", str(final), *si,
                     "--disable_viewer", "--quiet"], gpu)
         with lock:
             gd_times[seg_name(c)] = s
@@ -156,7 +166,7 @@ def main():
     if not os.path.exists(os.path.join(corr, "build_times.json")):
         cmd = [PY, "-m", "gsnet.waymo_corr", "--root", args.root, "--gdense_dir", gdense,
                "--out_dir", corr, "--test_scenes", *args.test_scenes,
-               "--iterations", str(final), "--workers", "8",
+               "--iterations", str(args.gdense_iter), "--workers", "8",
                "--global_scale", str(args.global_scale)]
         if args.no_filter:
             cmd.append("--no_filter")
