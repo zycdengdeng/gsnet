@@ -8,17 +8,15 @@
 #                --global_scale (metric), --no_filter.
 #   3) train   : GS-Net (encoder=concat, paper). training time recorded.
 #   4) eval    : on each TEST clip, 3 inits x a DENSIFICATION SWEEP, CARLA-SSE
-#                frame holdout [4,9]:
-#                  inits   = {sfm (baseline), mvs (fused.ply), gsnet}
-#                            -> MVS-input vs SfM (ceiling) + where GS-Net lands
-#                  densify = --densify_iters (find nuScenes' OWN sweet spot;
-#                            do NOT assume CARLA's 2000). Tests the 30k-washout:
-#                            does full densification erase the init advantage?
-#   5) aggregate-> nusc_eval.md: quality (PSNR/SSIM/LPIPS) + TIMING (infer,
-#                  optimisation) + #Gaussians (efficiency may be our advantage).
+#                frame holdout [4,9]. Each run is checkpointed at --eval_iters so
+#                we get the PSNR-vs-iteration CURVE for free (does the baseline
+#                catch up by 30k?). inits = {sfm, mvs(fused.ply), gsnet}:
+#                MVS-input vs SfM = densification ceiling; where GS-Net lands.
+#   5) aggregate-> nusc_eval.md: final PSNR/SSIM/LPIPS, convergence curve,
+#                  TIMING (infer/train/optim) + #Gaussians (efficiency).
 #
-# Every multi-GPU step uses gpu_pool: free-card-first, squeezes onto low-use
-# cards, OOM/failure -> retry on another free card, never aborts. Resumable.
+# gpu_pool: free-card-first, squeezes onto low-use cards, OOM/failure -> retry on
+# another free card, never aborts. Fully resumable (re-run to continue).
 #
 # Usage:
 #   nohup python -m gsnet.run_nusc \
@@ -26,8 +24,8 @@
 #       --test_scenes 348_clip_09 332_clip_09 331_clip_09 299_clip_09 325_clip_09 \
 #       --out_root runs/nusc --gpus 0 1 2 3 4 5 6 7 \
 #       --global_scale 45 --no_filter --epochs 200 \
-#       --densify_iters 0 2000 5000 15000 --min_free_mb 12000 \
-#       > runs/nusc.log 2>&1 &
+#       --densify_iters 0 2000 5000 15000 --eval_iters 7000 15000 30000 \
+#       --min_free_mb 12000 > runs/nusc.log 2>&1 &
 #
 import argparse
 import json
@@ -49,6 +47,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 INITS = ["sfm", "mvs", "gsnet"]
 HOLDOUT = [4, 9]                      # CARLA-SSE per-camera test frames
+MET = ("PSNR", "SSIM", "LPIPS")
 
 
 def on_gpu(cmd, gpu):
@@ -63,12 +62,6 @@ def on_gpu(cmd, gpu):
 def sh(cmd):
     print("\n$ " + " ".join(str(c) for c in cmd), flush=True)
     subprocess.run([str(c) for c in cmd], check=True, cwd=REPO)
-
-
-def read_psnr(mp):
-    d = json.load(open(os.path.join(mp, "results.json")))
-    m = d[sorted(d)[-1]]
-    return {k: m[k] for k in ("PSNR", "SSIM", "LPIPS")}
 
 
 def ply_count(path):
@@ -102,10 +95,15 @@ def main():
     ap.add_argument("--densify_iters", type=int, nargs="+", default=[0, 2000, 5000, 15000],
                     help="densify_until_iter values to sweep (find nuScenes' OWN sweet "
                          "spot). 0=off, 15000=3DGS default. tag=d<n>.")
-    ap.add_argument("--min_free_mb", type=int, default=12000)
+    ap.add_argument("--eval_iters", type=int, nargs="+", default=[7000, 15000, 30000],
+                    help="checkpoints to score -> PSNR-vs-iteration convergence curve. "
+                         "Last value is the total optimisation length.")
+    ap.add_argument("--min_free_mb", type=int, default=15000)
     ap.add_argument("--max_retries", type=int, default=5)
     args = ap.parse_args()
 
+    eval_iters = sorted(set(args.eval_iters) | {args.iterations})   # always score the final
+    final = args.iterations
     densify = [(f"d{n}", ([] if n == 15000 else ["--densify_until_iter", str(n)]))
                for n in args.densify_iters]
 
@@ -113,7 +111,6 @@ def main():
     gdense, corr, model, ev = (os.path.join(o, x) for x in ("gdense", "corr", "model", "eval"))
     os.makedirs(o, exist_ok=True)
     ckpt = os.path.join(model, "gsnet_latest.pt")
-    it = str(args.iterations)
     pool = dict(min_free_mb=args.min_free_mb, max_retries=args.max_retries)
     lock = threading.Lock()
 
@@ -122,8 +119,10 @@ def main():
                 if any(t in seg_name(c) for t in args.test_scenes)}
     train_clips = [c for c in all_clips if seg_name(c) not in test_set]
     test_clips = [resolve_scene(args.root, t) for t in args.test_scenes]
+    assert len(test_set) == len(args.test_scenes), \
+        f"test match mismatch: {sorted(test_set)} vs {args.test_scenes}"
     print(f"[nusc] {len(all_clips)} clips: {len(train_clips)} train, "
-          f"{len(test_clips)} test={sorted(test_set)}")
+          f"{len(test_clips)} test={sorted(test_set)}", flush=True)
 
     # ---- 1) G_dense on TRAIN clips (resumable, timed) ----
     gd_times = {}
@@ -132,39 +131,42 @@ def main():
         gd_times = json.load(open(gtp))
 
     def gd_path(c):
-        return os.path.join(gdense, seg_name(c), "point_cloud", f"iteration_{it}", "point_cloud.ply")
+        return os.path.join(gdense, seg_name(c), "point_cloud",
+                            f"iteration_{final}", "point_cloud.ply")
 
     def gd_fn(c, gpu):
         if os.path.exists(gd_path(c)):
             return
         s = on_gpu([PY, "train.py", "-s", dense_dir(c), "-m", os.path.join(gdense, seg_name(c)),
-                    "--init_pcd", fused_ply(c), "--iterations", it, "--test_iterations", it,
-                    "--save_iterations", it, "--disable_viewer", "--quiet"], gpu)
+                    "--init_pcd", fused_ply(c), "--iterations", str(final),
+                    "--test_iterations", str(final), "--save_iterations", str(final),
+                    "--disable_viewer", "--quiet"], gpu)
         with lock:
             gd_times[seg_name(c)] = s
             jdump(gd_times, gtp)
 
     todo = [c for c in train_clips if not os.path.exists(gd_path(c))]
-    print(f"[nusc] gdense: {len(todo)}/{len(train_clips)} to run")
+    print(f"[nusc] gdense: {len(todo)}/{len(train_clips)} to run", flush=True)
     if todo:
         _, f = run_jobs(todo, args.gpus, gd_fn, label="gdense", **pool)
         if f:
-            print(f"[nusc] WARN gdense failed: {[seg_name(x) for x in f]}")
+            print(f"[nusc] WARN gdense failed: {[seg_name(x) for x in f]}", flush=True)
 
     # ---- 2) correspondences (test excluded) ----
     if not os.path.exists(os.path.join(corr, "build_times.json")):
         cmd = [PY, "-m", "gsnet.waymo_corr", "--root", args.root, "--gdense_dir", gdense,
                "--out_dir", corr, "--test_scenes", *args.test_scenes,
-               "--iterations", it, "--workers", "8", "--global_scale", str(args.global_scale)]
+               "--iterations", str(final), "--workers", "8",
+               "--global_scale", str(args.global_scale)]
         if args.no_filter:
             cmd.append("--no_filter")
         sh(cmd)
     else:
-        print(f"[skip corr] {corr}")
+        print(f"[skip corr] {corr}", flush=True)
 
-    # ---- 3) train GS-Net (concat); training time saved by train_gsnet ----
+    # ---- 3) train GS-Net (concat) ----
     if os.path.exists(ckpt):
-        print(f"[skip train] {ckpt}")
+        print(f"[skip train] {ckpt}", flush=True)
     else:
         def tr_fn(_, gpu):
             on_gpu([PY, "-m", "gsnet.train_gsnet", "--corr_dir", corr, "--out_dir", model,
@@ -174,8 +176,8 @@ def main():
         run_jobs(["train"], args.gpus, tr_fn, label="train", **pool)
         assert os.path.exists(ckpt), "training produced no ckpt"
 
-    # ---- 4) eval: sources/splits, gsnet inits (timed), 3-init x densify sweep ----
-    for c in test_clips:
+    # ---- 4) eval ----
+    for c in test_clips:                                  # CPU: source + frame split (upfront)
         write_cam_split(scene_source(c, "nusc_eval"), frames=HOLDOUT)
 
     infer_times = {}
@@ -200,7 +202,7 @@ def main():
     if need:
         run_jobs(need, args.gpus, infer_fn, label="infer", **pool)
 
-    results = {}                                       # "clip|init|dtag" -> {PSNR,SSIM,LPIPS,optim_s,ngauss}
+    results = {}
     rp = os.path.join(o, "nusc_eval.json")
     if os.path.exists(rp):
         results = json.load(open(rp))
@@ -208,93 +210,125 @@ def main():
     def key(c, init, dtag):
         return f"{seg_name(c)}|{init}|{dtag}"
 
+    def ck_ply(mp, i):
+        return os.path.join(mp, "point_cloud", f"iteration_{i}", "point_cloud.ply")
+
     def ev_fn(job, gpu):
         c, init, dtag, dextra = job
         mp = os.path.join(ev, seg_name(c), f"{init}_{dtag}")
-        if os.path.exists(os.path.join(mp, "results.json")):
-            m, s = read_psnr(mp), -1.0
-        else:
+        rj = os.path.join(mp, "results.json")
+        s = -1.0
+        if not os.path.exists(rj):
             src = scene_source(c, "nusc_eval")
             ia = ([] if init == "sfm" else
                   ["--init_pcd", fused_ply(c)] if init == "mvs" else
                   ["--gsnet_init", init_ply(c)])
-            s = on_gpu([PY, "train.py", "-s", src, "-m", mp, "--eval", "--iterations", it,
-                        "--test_iterations", it, "--save_iterations", it,
-                        "--disable_viewer", "--quiet", *ia, *dextra], gpu)
-            on_gpu([PY, "render.py", "-m", mp, "--skip_train", "--quiet"], gpu)
+            si = [x for i in eval_iters for x in ("--save_iterations", str(i))]
+            ti = [x for i in eval_iters for x in ("--test_iterations", str(i))]
+            if not os.path.exists(ck_ply(mp, final)):     # (re)train only if final ckpt missing
+                s = on_gpu([PY, "train.py", "-s", src, "-m", mp, "--eval",
+                            "--iterations", str(final), *ti, *si,
+                            "--disable_viewer", "--quiet", *ia, *dextra], gpu)
+            for i in eval_iters:                          # render every checkpoint
+                on_gpu([PY, "render.py", "-m", mp, "--iteration", str(i),
+                        "--skip_train", "--quiet"], gpu)
             on_gpu([PY, "metrics.py", "-m", mp], gpu)
-            m = read_psnr(mp)
-        ng = ply_count(os.path.join(mp, "point_cloud", f"iteration_{it}", "point_cloud.ply"))
+        d = json.load(open(rj))
+        iters_res = {}
+        for i in eval_iters:
+            k = f"ours_{i}"
+            if k in d:
+                iters_res[str(i)] = {**{m: d[k][m] for m in MET},
+                                     "ngauss": ply_count(ck_ply(mp, i))}
         with lock:
-            results[key(c, init, dtag)] = {**m, "optim_s": s, "ngauss": ng}
+            results[key(c, init, dtag)] = {"optim_s": s, "iters": iters_res}
             jdump(results, rp)
-        print(f"[eval] {seg_name(c)} {init}/{dtag} PSNR={m['PSNR']:.2f} "
-              f"optim={s/60:.1f}min ngauss={ng}", flush=True)
+        fin = iters_res.get(str(final), {})
+        print(f"[eval] {seg_name(c)} {init}/{dtag} PSNR@{final}={fin.get('PSNR', float('nan')):.2f} "
+              f"optim={s/60:.1f}min ngauss={fin.get('ngauss', -1)}", flush=True)
 
     jobs = [(c, init, dtag, dextra) for c in test_clips
             for init in INITS for dtag, dextra in densify
             if key(c, init, dtag) not in results]
-    print(f"[nusc] eval: {len(jobs)} jobs to run")
+    print(f"[nusc] eval: {len(jobs)} jobs to run", flush=True)
     if jobs:
         _, f = run_jobs(jobs, args.gpus, ev_fn, label="eval", **pool)
         if f:
-            print(f"[nusc] WARN eval failed for {len(f)} jobs")
+            print(f"[nusc] WARN eval failed for {len(f)} jobs", flush=True)
 
-    aggregate(results, test_set, [d for d, _ in densify], gd_times, infer_times, model, o)
+    aggregate(results, sorted(test_set), [d for d, _ in densify], eval_iters,
+              gd_times, infer_times, model, o)
 
 
-def aggregate(results, test_set, dtags, gd_times, infer_times, model_dir, out_root):
-    clips = sorted(test_set)
+def aggregate(results, clips, dtags, eval_iters, gd_times, infer_times, model_dir, out_root):
+    final = eval_iters[-1]
 
-    def avg(init, dtag, field):
-        v = [results[f"{c}|{init}|{dtag}"][field] for c in clips
-             if f"{c}|{init}|{dtag}" in results]
+    def avg(init, dtag, it, field):
+        v = []
+        for c in clips:
+            r = results.get(f"{c}|{init}|{dtag}", {}).get("iters", {}).get(str(it))
+            if r and field in r:
+                v.append(r[field])
         return sum(v) / len(v) if v else float("nan")
 
-    L = ["", "# nuScenes SSE — init-spectrum x densification sweep (holdout [4,9])", ""]
-    # quality
-    L += ["## PSNR  (find GS-Net's sweet spot; MVS-SfM = ceiling)",
+    def avg_optim(init, dtag):
+        v = [results[f"{c}|{init}|{dtag}"]["optim_s"] for c in clips
+             if f"{c}|{init}|{dtag}" in results and results[f"{c}|{init}|{dtag}"]["optim_s"] > 0]
+        return sum(v) / len(v) / 60 if v else float("nan")
+
+    L = ["", "# nuScenes SSE — init-spectrum x densification x convergence (holdout [4,9])", ""]
+    L += [f"## Final PSNR @ {final}  (GSNet-SfM = our gain; MVS-SfM = ceiling)",
           "| densify | SfM | MVS | GS-Net | MVS-SfM | GSNet-SfM |", "|---|---|---|---|---|---|"]
     for d in dtags:
-        s, m, g = avg("sfm", d, "PSNR"), avg("mvs", d, "PSNR"), avg("gsnet", d, "PSNR")
+        s, m, g = (avg("sfm", d, final, "PSNR"), avg("mvs", d, final, "PSNR"),
+                   avg("gsnet", d, final, "PSNR"))
         L.append(f"| {d} | {s:.2f} | {m:.2f} | {g:.2f} | {m-s:+.2f} | {g-s:+.2f} |")
-    # LPIPS
-    L += ["", "## LPIPS (lower better)", "| densify | SfM | MVS | GS-Net |", "|---|---|---|---|"]
+
+    L += ["", "## Convergence: GSNet-SfM (PSNR gain) at each iteration",
+          "| densify | " + " | ".join(f"@{i}" for i in eval_iters) + " |",
+          "|---|" + "---|" * len(eval_iters)]
     for d in dtags:
-        L.append(f"| {d} | {avg('sfm',d,'LPIPS'):.3f} | {avg('mvs',d,'LPIPS'):.3f} "
-                 f"| {avg('gsnet',d,'LPIPS'):.3f} |")
-    # timing / efficiency
+        cells = [f"{avg('gsnet',d,i,'PSNR')-avg('sfm',d,i,'PSNR'):+.2f}" for i in eval_iters]
+        L.append(f"| {d} | " + " | ".join(cells) + " |")
+
+    L += ["", f"## Final LPIPS @ {final} (lower better)",
+          "| densify | SfM | MVS | GS-Net |", "|---|---|---|---|"]
+    for d in dtags:
+        L.append(f"| {d} | {avg('sfm',d,final,'LPIPS'):.3f} | {avg('mvs',d,final,'LPIPS'):.3f} "
+                 f"| {avg('gsnet',d,final,'LPIPS'):.3f} |")
+
     tr = "?"
     cfgp = os.path.join(model_dir, "config.json")
     if os.path.exists(cfgp):
         tr = f"{json.load(open(cfgp)).get('total_seconds', 0)/60:.1f} min"
     inf = (sum(infer_times.values()) / len(infer_times)) if infer_times else float("nan")
+    gdm = (sum(gd_times.values()) / len(gd_times) / 60) if gd_times else float("nan")
     L += ["", "## Timing / efficiency",
           f"- GS-Net **train** (one-off): {tr}",
           f"- GS-Net **infer** (one forward pass, per clip): **{inf:.2f}s avg**",
-          f"- G_dense build (3DGS 30k per train clip): "
-          f"{(sum(gd_times.values())/len(gd_times)/60):.1f} min avg" if gd_times else "",
-          "", "| densify | init | optim(min) | #Gaussians |", "|---|---|---|---|"]
+          f"- G_dense build (3DGS {final} per train clip): {gdm:.1f} min avg",
+          "", f"| densify | init | optim(min) | #Gaussians@{final} |", "|---|---|---|---|"]
     for d in dtags:
         for init in INITS:
-            L.append(f"| {d} | {init} | {avg(init,d,'optim_s')/60:.1f} | "
-                     f"{avg(init,d,'ngauss'):.0f} |")
-    # per clip
-    L += ["", "## per-clip PSNR", "| clip | densify | SfM | MVS | GS-Net |", "|---|---|---|---|---|"]
+            L.append(f"| {d} | {init} | {avg_optim(init,d):.1f} | {avg(init,d,final,'ngauss'):.0f} |")
+
+    L += ["", f"## per-clip PSNR @ {final}",
+          "| clip | densify | SfM | MVS | GS-Net |", "|---|---|---|---|---|"]
     for c in clips:
         for d in dtags:
             def cell(init):
-                k = f"{c}|{init}|{d}"
-                return f"{results[k]['PSNR']:.2f}" if k in results else "-"
+                r = results.get(f"{c}|{init}|{d}", {}).get("iters", {}).get(str(final))
+                return f"{r['PSNR']:.2f}" if r else "-"
             L.append(f"| {c} | {d} | {cell('sfm')} | {cell('mvs')} | {cell('gsnet')} |")
-    L += ["", "Read: per densify row, GSNet-SfM is our gain; scan rows for the "
-          "densify value that MAXIMISES it (nuScenes' own sweet spot). MVS-SfM is "
-          "the densification ceiling. Efficiency: GS-Net infer is seconds vs MVS "
-          "(offline patch-match minutes); fewer #Gaussians / less optim at equal "
-          "quality is also an advantage."]
-    table = "\n".join(x for x in L if x is not None)
+
+    L += ["", "Read: scan the Final-PSNR rows for the densify value maximising "
+          "GSNet-SfM (nuScenes' own sweet spot). The Convergence table shows whether "
+          "GS-Net's lead shrinks from @7k to @30k (washout). MVS-SfM is the ceiling. "
+          "Efficiency: GS-Net infer is seconds (vs MVS patch-match offline minutes); "
+          "fewer #Gaussians / less optim at equal quality is also an advantage."]
+    table = "\n".join(L)
     open(os.path.join(out_root, "nusc_eval.md"), "w").write(table + "\n")
-    print("\n" + table + f"\n\n-> {out_root}/nusc_eval.md")
+    print("\n" + table + f"\n\n-> {out_root}/nusc_eval.md", flush=True)
 
 
 if __name__ == "__main__":

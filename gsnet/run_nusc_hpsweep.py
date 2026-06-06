@@ -62,7 +62,7 @@ def main():
     ap.add_argument("--densify_until", type=int, default=0,
                     help="densify_until_iter to evaluate every config at (0=off)")
     ap.add_argument("--iterations", type=int, default=30000)
-    ap.add_argument("--min_free_mb", type=int, default=12000)
+    ap.add_argument("--min_free_mb", type=int, default=15000)
     ap.add_argument("--max_retries", type=int, default=5)
     args = ap.parse_args()
 
