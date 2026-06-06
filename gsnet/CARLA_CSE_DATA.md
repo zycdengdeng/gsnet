@@ -1,145 +1,123 @@
-# CARLA 数据组织 & CSE 训练/评测流程（给合作者）
+# CARLA CSE Benchmark — 评测规格（给合作者跑其它方法做对比）
 
-> 目的：让合作者完整理解 GS-Net 在 CARLA 上的 **CSE（Cross-Sensor Evaluation，跨相机合成）** 是怎么组织数据的——
-> ① GS-Net 网络的训练资料怎么来；② 喂进 3DGS 做监督/测试的视角与初始化是什么；③ 位姿从哪来；④ 对应磁盘路径。
+> 用途：让合作者把**任意方法（尤其其它 feed-forward NVS 方法）**放到我们的 **CSE（Cross-Sensor /
+> 跨相机合成）** benchmark 上，得到与我们**口径完全一致**的 PSNR/SSIM/LPIPS。
+> 本文档给：① benchmark 定义 ② 数据/位姿在哪、怎么读 ③ 你的方法要产出什么 ④ **评测代码与指标（直接可跑）**。
 
 ---
 
 ## 0. 一句话
-GS-Net = **稀疏 SfM 点 → 一次前向 → 稠密 3DGS 高斯**，作即插即用初始化。
-CARLA 用一个 **12 相机的十二边形环视 rig**（绕 ego 一圈）。CSE = **用 6 个奇数相机重建、合成并测 6 个偶数相机**（偶数相机的位置在重建时完全没出现过）= 跨传感器/跨视角合成。
+**5 条序列** `110 / 210 / 310 / 410 / 510`，每条：**用 60 张「源」相机图重建 → 在另外 60 张「目标」相机图上合成并评测**（目标相机的位置在重建时从未出现）。报告 PSNR/SSIM/LPIPS（逐序列 + 5 条均值）。
 
 ---
 
-## 1. 相机 rig（`gsnet/carla_rig.json`）
-半径 0.75m 的十二边形，12 个相机均匀环视，每个 yaw 差 30°：
+## 1. 协议（每条序列）
+- **源 / source（重建输入）= 60 张**：6 个奇数相机 × 10 帧（CARLA 12 相机环视 rig 的奇数相机 cam01/03/05/07/09/11）。带 COLMAP 位姿 + 内参。
+- **目标 / target（测试）= 60 张**：6 个偶数相机 × 10 帧（cam02/04/06/08/10/12，yaw 各偏 30°）。**重建时不可见**，仅用于评测。
+- 任务：方法用 60 源视图建好表示后，在 **60 个目标位姿**渲染，与 60 张目标 GT 比。
 
-| 相机 | 角色 | yaw |
-|---|---|---|
-| cam01,03,05,07,09,11（**奇数**）| **source / 训练视角** | 0,60,120,180,240,300° |
-| cam02,04,06,08,10,12（**偶数**）| **target / 测试视角** | 30,90,150,210,270,330° |
-
-- 12 相机共享同一组内参（intrinsics）。
-- 坐标系：CARLA 为 x-前、y-右、z-上（左手系）；CARLA↔COLMAP 的轴变换在 `cse_poses.py` 里自动求解。
+> 这是 CARLA 合成数据，12 相机为半径 0.75m 的十二边形环视 rig（见 `gsnet/carla_rig.json`）。
 
 ---
 
-## 2. 序列 / 场景编号约定
-- 编号 `<id>`（3 位）：**场景 = id // 100**，**序列 = id % 100**。
-- 5 个场景 `S01..S05`；每个场景多条序列。
-- **测试序列 = 每场景的第 10 条：`110 / 210 / 310 / 410 / 510`**（CSE 与 SSE 共用这 5 条做测试）。
-- **训练序列 = 其余（如 101–109、201–209 …）**。
-- ⚠️ **务必确认 GS-Net 训练用的 `CORR/train` 里不含 110/210/310/410/510**（测试序列必须从训练中剔除，否则泄漏）。
-
----
-
-## 3. 磁盘上的原始数据（路径表）
-根目录：`/mnt/zihanw/carla/`
-
-| 路径 | 内容 | 在流程里的角色 |
-|---|---|---|
-| `input_output/<id>_base/sparse/0/` | 60 张**奇数相机**图（6 奇相机 × 10 帧）的 **COLMAP SfM 模型**（`cameras.bin`/`images.bin`/`points3D.*`）| 提供奇数相机的**真实 COLMAP 位姿** + source 重建 |
-| `input_output/<id>_base/images/` | 那 60 张奇数相机图 | 3DGS 的**训练（监督）视角** |
-| `input_output/output_<id>_dense/point_cloud/iteration_30000/point_cloud.ply` | 在该序列上跑满 30k 的 **3DGS 稠密高斯** | **G_dense = GS-Net 的监督目标（伪GT）** |
-| `sparse_point/S0X/<id>_sparse.ply` | 该序列的**稀疏 SfM 点** | **GS-Net 的输入**（也是 baseline 3DGS 的初始化点云）|
-| `paired_120/<id>_dense/cam00../cam11/` | 全 12 相机的稠密渲染图 | 取**偶数相机的测试图**（GT）|
-
-> 奇数图命名约定（`<id>_base`）：`<n>.png`，n=1..60，其中 `cam = 2*((n-1)//10)+1`、`frame = (n-1)%10`。
-
----
-
-## 4. GS-Net 训练资料（correspondences）= 监督怎么来的
-对每条**训练序列**，把"稀疏 SfM 点（输入）"与"G_dense（目标）"配对，生成一个 `.npz`：
-
+## 2. 数据在哪、怎么读
+每条序列一个标准 **COLMAP 文本模型**：`runs/cse_scenes/<id>/`
 ```
-python -m gsnet.build_correspondences --batch \
-    --io_dir /mnt/zihanw/carla/input_output \
-    --sparse_root /mnt/zihanw/carla/sparse_point \
-    --out_dir CORR/train --M 3 --K 5
+runs/cse_scenes/<id>/
+  sparse/0/cameras.txt   # 1 个 PINHOLE 内参（12 相机共享）：fx fy cx cy W H
+  sparse/0/images.txt    # 120 张图的位姿(qvec,tvec=world->camera)；含源(60)+目标(60)
+  sparse/0/test.txt      # 60 个【目标】图名（评测集；其余 60 = 源/训练）
+  sparse/0/points3D.*    # 源(奇数)稀疏 SfM 点（如果你的方法想用点云初始化，可用；否则忽略）
+  images/                # 全部 120 张图（软链接）。目标 GT = images/<name>，name∈test.txt
 ```
-- 对每个稀疏点 p：取它的 **M=3 个最近稀疏邻居**（给几何编码器）+ 在 G_dense 里**最近的 K=5 个稠密高斯**（作为该点的监督目标集：位置/颜色/尺度/旋转/不透明度）。
-- **逐序列归一化**（`compute_normalization`：center=点中位数、scale=到 center 距离的 95 分位）→ 所有序列搬到同一标准尺度，网络才学得动 offset/尺寸。归一化参数 `norm_center/norm_scale` 存进 npz，推理时反变换回真实尺度。
-- 产物：`CORR/train/<id>.npz`（每条训练序列一个）。
+- **源 vs 目标的区分**：`test.txt` 里的 = 目标（测试）；`images.txt` 里其余 = 源（重建输入）。
+- **目标 GT 图**：`runs/cse_scenes/<id>/images/<name>`，其中 `<name>` 遍历 `test.txt`（形如 `e02_03.png`）。
+- **图像分辨率/内参**：从 `cameras.txt` 读（所有相机同一内参）。
 
-**训练 GS-Net（最终配方 geom:tanh:0.1:10:1 @ M=3, T=5）：**
-```
-python -m gsnet.train_gsnet --corr_dir CORR/train \
-    --encoder_type geom --color_activation tanh \
-    --w_rot 0.1 --w_pos 10 --M 3 --T 5 --in_memory 1 \
-    --out_dir runs/ours
-```
-→ ckpt：`runs/ours/gsnet_latest.pt`（CSE 论文里用的 ckpt 见 `run_cse --ckpt`）。
+### 位姿约定（COLMAP，务必按此解）
+`images.txt` 每行：`IMAGE_ID qw qx qy qz tx ty tz CAMERA_ID NAME`
+- `q=(qw,qx,qy,qz)`、`t=(tx,ty,tz)` 是 **world→camera**。
+- 旋转 `R = qvec2rotmat(q)`（world→cam）；相机中心 `C = -R^T t`；**cam→world** 外参 `[R^T | C]`。
+- 内参矩阵 `K = [[fx,0,cx],[0,fy,cy],[0,0,1]]`。
+- 投影：`x_pix ~ K · (R · X_world + t)`。
+- 渲染你的方法时，对每个目标图名，用其 `(q,t)` + `K` 作为目标视点。
+
+> 想要更省事的 JSON（intrinsics/extrinsics + train/test 划分）我可以加个导出脚本，说一声。
 
 ---
 
-## 5. 喂进 3DGS：监督视角 vs 测试视角（CSE 的核心）
-每条测试序列构建一个 COLMAP 场景（`runs/cse_scenes/<id>/`），含 **60 奇（训练）+ 60 偶（测试）**：
+## 3. 你的方法要产出什么
+对每条序列，把你的方法在 **60 个目标位姿**渲染出的图，**用与目标 GT 完全相同的文件名**（即 `test.txt` 里的名字）存到一个 `renders/` 目录：
+```
+<your_method>/<id>/renders/e02_00.png, e02_01.png, ..., e12_09.png   # 60 张
+```
+分辨率需与 GT 一致（评测脚本会检查 shape）。
 
-| | 图来源 | 位姿 | 在 3DGS 里 |
+---
+
+## 4. 评测代码与指标（直接用 `gsnet/eval_cse.py`）
+**指标定义（与我们 3DGS 主表完全一致）：**
+- **PSNR** `= 20·log10(1/√MSE)`，图像归一到 [0,1]、RGB 前 3 通道、逐图算再平均。
+- **SSIM** = 3DGS 实现：11×11 高斯窗(σ=1.5)、`C1=0.01²`、`C2=0.03²`。
+- **LPIPS** = **VGG** backbone（脚本优先用本仓库 `lpipsPyTorch`，与我们数字逐位一致；无仓库时回退 pip 包 `lpips`(net='vgg')，数值基本一致）。
+
+**跑评测：**
+```bash
+# 单条序列（GT 自动从该 scene 的 test.txt 拉取）
+python gsnet/eval_cse.py --renders <your_method>/110/renders --scene runs/cse_scenes/110
+
+# 一次性 5 条 + 自动出均值（'renders目录:scene目录' 成对）
+python gsnet/eval_cse.py --multi \
+  <your_method>/110/renders:runs/cse_scenes/110 \
+  <your_method>/210/renders:runs/cse_scenes/210 \
+  <your_method>/310/renders:runs/cse_scenes/310 \
+  <your_method>/410/renders:runs/cse_scenes/410 \
+  <your_method>/510/renders:runs/cse_scenes/510 \
+  --out <your_method>/cse_scores.json
+```
+依赖：`torch torchvision pillow`（+ 本仓库的 `lpipsPyTorch`，或 `pip install lpips`）。
+输出：逐序列 + **5 条均值**的 PSNR/SSIM/LPIPS 表。
+
+> ⚠️ **所有方法（含我们）都用这同一个 `eval_cse.py` 打分**，保证 apples-to-apples。
+> 渲染图名必须与 `test.txt` 一致，否则脚本报"无匹配"。
+
+---
+
+## 5. 报告格式
+| Seq | PSNR | SSIM | LPIPS |
 |---|---|---|---|
-| **奇数 60 张** | `input_output/<id>_base/images/` | COLMAP 原始位姿 | **训练/监督视角**（重建用这些）|
-| **偶数 60 张** | `paired_120/<id>_dense/camXX/` | 由 rig 推导（见 §6）| **测试视角**（写进 `test.txt`，重建时不参与）|
+| 110 | … | … | … |
+| 210 | … | … | … |
+| 310 | … | … | … |
+| 410 | … | … | … |
+| 510 | … | … | … |
+| **Avg** | … | … | … |
 
-- **初始化点云**：
-  - baseline 3DGS → **奇数稀疏 SfM 点**（`<id>_base` 的 points3D 复制进场景）。
-  - GS-Net+3DGS → **GS-Net 从奇数稀疏点预测的高斯**（`infer` 产出 `gsnet_init.ply`，经 `--gsnet_init` 注入）。
-- 评测 = 在 60 个**偶数相机位置**（重建中从未出现的位置）上 render + 算 PSNR/SSIM/LPIPS。这就是"跨传感器"：用一组相机重建、去合成另一组相机。
-
----
-
-## 6. 位姿从哪来（关键，避免误解）
-- **奇数（训练）位姿**：直接来自 `<id>_base` 的 COLMAP SfM（`images.bin`）。
-- **偶数（测试）位姿**：**不重新跑 SfM**（重跑会改坐标系、破坏与 G_dense/GS-Net 的一致性）。改用 `cse_poses.py`：
-  - 已知 CARLA rig（12 相机相对 ego 的固定安装）+ 每帧用 6 个奇数相机的 COLMAP 位姿，**Umeyama 拟合每帧 ego→COLMAP 相似变换**，再作用到偶数相机的已知 rig 安装上 → 得到偶数相机在**奇数 COLMAP 坐标系**下的位姿。
-  - CARLA↔COLMAP 轴变换自动搜索（48×48 signed-permutation），用奇数相机自校验挑残差最小的。
-  - **自校验残差应 ~亚度、亚百分比**（日志会打印 `rot_residual_deg` / `center_residual_rel`）——这是位姿正确性的体检。
+我们的数字（参考，同一评测口径）：**GS-Net + 3DGS（densify=2000）Avg PSNR ≈ 19.89 vs 3DGS-baseline 18.00（Δ+1.89）。**
 
 ---
 
-## 7. 端到端复现命令（CSE）
-```
-# (a) 推导偶数相机测试位姿
-python -m gsnet.cse_poses --io_dir /mnt/zihanw/carla/input_output \
-    --rig gsnet/carla_rig.json --ids 110 210 310 410 510 --out_dir runs/cse_poses
+## 6. 我们的方法怎么跑的（参考，理解 benchmark 来历）
+- **GS-Net**（本工作，encoder=**concat**）：稀疏 SfM 点 → 一次前向 → 稠密 3DGS 高斯，作 3DGS 初始化；再用 60 源视图优化 3DGS，渲染 60 目标视图评测。
+- **baseline**：同样流程，但 3DGS 用源稀疏 SfM 点直接初始化（不接 GS-Net）。
+- 两者都用 `train.py --eval`（在非 test 图上优化、在 test.txt 图上评测）→ `render.py` → 我们用 `eval_cse.py` 同口径打分。
 
-# (b) 构建 CSE COLMAP 场景（60奇训练 + 60偶测试 + test.txt + 初始化点云）
-python -m gsnet.make_cse_scene --io_dir /mnt/zihanw/carla/input_output \
-    --paired_dir /mnt/zihanw/carla/paired_120 \
-    --poses_dir runs/cse_poses --out_dir runs/cse_scenes --ids 110 210 310 410 510
-
-# (c) 跑 CSE：baseline(稀疏init) vs GS-Net(--gsnet_init)，train.py --eval -> render -> metrics
-python -m gsnet.run_cse --scenes_dir runs/cse_scenes \
-    --sparse_root /mnt/zihanw/carla/sparse_point \
-    --ckpt runs/ours/gsnet_latest.pt --out_dir runs/cse --gpus 2 3 4 5 6 7
-#   甜点设置（论文主表）：加 --train_extra "--densify_until_iter 2000"
-```
-→ 结果：`runs/cse/cse_results.{json,md}`（逐序列 + 均值 PSNR/SSIM/LPIPS）。
-**当前主表数字：CSE densify=2000，gsnet 19.89 / baseline 18.00 → Δ=+1.89±0.1（多seed）。**
+### benchmark 是怎么造出来的（数据 provenance，可复现）
+| 步骤 | 命令 / 文件 | 作用 |
+|---|---|---|
+| 源数据 | `/mnt/zihanw/carla/input_output/<id>_base/` | 60 奇数相机图的 COLMAP SfM（源位姿）|
+| 目标图 | `/mnt/zihanw/carla/paired_120/<id>_dense/camXX/` | 偶数相机的稠密渲染图（目标 GT）|
+| 目标位姿 | `gsnet/cse_poses.py`（rig + Umeyama，**不重跑 SfM**）| 在源 COLMAP 坐标系下推导偶数相机位姿，自校验亚度 |
+| 组装场景 | `gsnet/make_cse_scene.py` | 拼成 `runs/cse_scenes/<id>/`（60源+60目标+test.txt+源点云）|
 
 ---
 
-## 8. 关键文件清单
+## 7. 关键文件清单
 | 文件 | 作用 |
 |---|---|
+| `runs/cse_scenes/<id>/` | **benchmark 数据**（COLMAP 模型 + 120 图 + test.txt）|
+| `gsnet/eval_cse.py` | **统一评测脚本**（PSNR/SSIM/LPIPS-vgg）|
 | `gsnet/carla_rig.json` | 12 相机 rig（位置/朝向）|
-| `gsnet/build_correspondences.py` | 稀疏点↔G_dense 配对 → GS-Net 训练 npz |
-| `gsnet/train_gsnet.py` | 训练 GS-Net |
-| `gsnet/infer.py` | 稀疏点 → GS-Net 高斯 init ply（含反归一化）|
-| `gsnet/cse_poses.py` | 由 rig 推导偶数相机测试位姿（不重跑 SfM）|
-| `gsnet/make_cse_scene.py` | 组装 CSE COLMAP 场景（奇训练+偶测试）|
-| `gsnet/run_cse.py` | CSE 评测驱动（baseline vs GS-Net）|
-| `train.py`（仓库根）| 3DGS 优化；`--gsnet_init` 注入 GS-Net 初始化 |
-
----
-
-### 数据流总览
-```
-稀疏SfM点(sparse_point/S0X/<id>_sparse.ply) ──┐
-                                              ├─ build_correspondences ─ CORR/train/<id>.npz ─ train_gsnet ─ ckpt
-G_dense(output_<id>_dense/.../point_cloud.ply)┘                                                              │
-                                                                                                            ▼
-CSE 测试序列:                                                                                          infer → gsnet_init.ply
-  奇数图+COLMAP位姿  ── 训练/监督视角 ─┐                                                                       │
-  偶数图+rig推导位姿 ── 测试视角(test.txt)├─ make_cse_scene → runs/cse_scenes/<id> ─ run_cse(train.py --eval)─┤
-  奇数稀疏点 ── baseline 初始化 ─────────┘                                          (baseline 用稀疏点 / ours 用 gsnet_init)
-```
+| `gsnet/cse_poses.py` | 推导目标相机位姿 |
+| `gsnet/make_cse_scene.py` | 组装 CSE 场景 |
+| `gsnet/run_cse.py` | 我们方法 + baseline 的端到端跑分驱动（参考）|
