@@ -38,7 +38,7 @@ from gsnet.common import (
 
 def build_for_sequence(sparse_path, gdense_path, out_path, K=5, M=3,
                        normalize=True, subsample=1.0, input_subsample=1.0,
-                       image_feats_dir=None,
+                       image_feats_dir=None, scale_override=None,
                        **filt_kwargs):
     t0 = time.time()
     cxyz, crgb = read_points_any(sparse_path)
@@ -64,8 +64,17 @@ def build_for_sequence(sparse_path, gdense_path, out_path, K=5, M=3,
     N = cxyz.shape[0]
 
     # Per-sequence normalization (from sparse points only -> reproducible).
-    center, scale = compute_normalization(cxyz) if normalize else (
-        np.zeros(3, np.float32), 1.0)
+    # scale_override: use ONE fixed global scale (metric datasets, e.g. nuScenes)
+    # while still centering per-sequence -> a physical object has the same
+    # normalized size across all sequences (per-seq 95pct scaling would inject a
+    # ~3x size inconsistency on metric data and make the Gaussian-size target
+    # ill-posed). center stays the per-sequence median.
+    if scale_override is not None:
+        center = np.median(cxyz, axis=0).astype(np.float32)
+        scale = float(scale_override)
+    else:
+        center, scale = compute_normalization(cxyz) if normalize else (
+            np.zeros(3, np.float32), 1.0)
     n_cxyz = (cxyz - center) / scale
     n_gmu = (g["xyz"] - center) / scale
     n_gscale = g["scale"] / scale

@@ -47,6 +47,13 @@ def run(args):
     cxyz, crgb = read_points_any(args.sparse)
     if args.no_normalize:
         center, scale = np.zeros(3, np.float32), 1.0
+    elif args.norm_scale > 0:
+        # Fixed GLOBAL scale (metric datasets like nuScenes): center per-scene
+        # (remove arbitrary absolute world position) but use ONE shared scale so a
+        # physical object has the SAME normalized size in every scene. Must match
+        # the --global_scale used when building the training correspondences.
+        center = np.median(cxyz, axis=0).astype(np.float32)
+        scale = float(args.norm_scale)
     else:
         center, scale = compute_normalization(cxyz)
     n_cxyz = (cxyz - center) / scale
@@ -122,6 +129,10 @@ def main():
     ap.add_argument("--chunk", type=int, default=200000)
     ap.add_argument("--opacity_thresh", type=float, default=0.0)
     ap.add_argument("--no_normalize", action="store_true")
+    ap.add_argument("--norm_scale", type=float, default=0.0,
+                    help="fixed global normalization scale (meters) for metric "
+                         "datasets; center stays per-scene. Must equal the "
+                         "--global_scale used to build training corr. 0 = per-scene 95pct.")
     ap.add_argument("--image_feats", default="",
                     help="images dir for image-conditioned models (feat_dim>0); "
                          "must match how the corr was built")

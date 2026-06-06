@@ -49,6 +49,13 @@ def main():
     ap.add_argument("--holdout_frames", type=int, nargs="+", default=None,
                     help="explicit per-camera SSE test frame indices (e.g. 4 9 = "
                          "CARLA-SSE scheme); overrides --n_holdout")
+    ap.add_argument("--global_scale", type=float, default=0.0,
+                    help="fixed global normalization scale (m) for metric datasets "
+                         "(nuScenes ~45); center stays per-scene. 0 = per-scene 95pct. "
+                         "Threaded to corr (--global_scale) and SSE infer (--norm_scale).")
+    ap.add_argument("--no_filter", action="store_true",
+                    help="learn from raw G_dense (no radius/opacity filtering); "
+                         "passed to corr")
     args = ap.parse_args()
     o = args.out_root
     os.makedirs(o, exist_ok=True)
@@ -62,9 +69,11 @@ def main():
     sh(gd_cmd)
 
     # 2) sparse->dense correspondences for TRAINING scenes (test held out)
+    gs = ["--global_scale", str(args.global_scale)] if args.global_scale > 0 else []
+    nf = ["--no_filter"] if args.no_filter else []
     sh([PY, "-m", "gsnet.waymo_corr", "--root", args.root, "--gdense_dir", gdense,
         "--out_dir", corr, "--test_scenes", *args.test_scenes,
-        "--iterations", str(args.gdense_iter), "--workers", "8"])
+        "--iterations", str(args.gdense_iter), "--workers", "8", *gs, *nf])
 
     # 3) train GS-Net (final recipe)
     ckpt = os.path.join(model, "gsnet_latest.pt")
@@ -82,10 +91,12 @@ def main():
     #    positive in this sparse regime, per the CARLA-CSE finding).
     sse_off = sse + "_doff"
     hf = ["--holdout_frames", *[str(f) for f in args.holdout_frames]] if args.holdout_frames else []
+    ns = ["--norm_scale", str(args.global_scale)] if args.global_scale > 0 else []
     for out, ex in ((sse, []), (sse_off, ["--train_extra", "--densify_until_iter 0"])):
         sh([PY, "-m", "gsnet.waymo_sse", "--root", args.root, "--test_scenes", *args.test_scenes,
             "--ckpt", ckpt, "--out_dir", out, "--n_holdout", str(args.n_holdout),
-            "--iterations", str(args.iterations), "--gpus", *[str(g) for g in args.gpus], *hf, *ex])
+            "--iterations", str(args.iterations), "--gpus", *[str(g) for g in args.gpus],
+            *hf, *ns, *ex])
 
     print("\n=================== FINAL Waymo SSE (sparse wide-baseline) ===================")
     for label, out in (("densify-ON ", sse), ("densify-OFF", sse_off)):

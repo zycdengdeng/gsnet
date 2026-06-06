@@ -118,6 +118,9 @@ def main():
                          "init from source-view densification washout)")
     ap.add_argument("--image_feats", action="store_true",
                     help="pass --image_feats <images_dir> to infer (for image-conditioned models)")
+    ap.add_argument("--norm_scale", type=float, default=0.0,
+                    help="fixed global normalization scale (m) passed to infer "
+                         "(metric datasets; must equal training --global_scale)")
     ap.add_argument("--anchor_weight", type=float, default=0.0,
                     help=">0: also anchor 3DGS optimization to the GS-Net prediction "
                          "(persistent prior, not just init)")
@@ -181,6 +184,8 @@ def main():
                              "--sparse", sparse_points(scene), "--out", init_ply]
                 if args.image_feats:
                     infer_cmd += ["--image_feats", images_dir(scene)]
+                if args.norm_scale > 0:
+                    infer_cmd += ["--norm_scale", str(args.norm_scale)]
                 infer_s = run(infer_cmd, gpu)
                 extra = ["--gsnet_init", init_ply, *args.train_extra]
                 if args.anchor_weight > 0:   # GS-Net as persistent prior (init + anchor)

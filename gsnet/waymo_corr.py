@@ -42,7 +42,16 @@ def main():
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--image_feats", action="store_true",
                     help="bake per-point image features into corr (image-conditioned GS-Net)")
+    ap.add_argument("--global_scale", type=float, default=0.0,
+                    help="fixed global normalization scale (meters) for metric "
+                         "datasets (nuScenes); center stays per-scene. 0 = per-scene "
+                         "95pct (CARLA/Waymo). Must match infer --norm_scale at test.")
+    ap.add_argument("--no_filter", action="store_true",
+                    help="do NOT filter G_dense (keep ALL dense Gaussians as targets): "
+                         "no radius cut, no opacity cut. Learn from raw G_dense.")
     args = ap.parse_args()
+    if args.no_filter:                       # keep everything: huge radius, opacity>=0
+        args.radius_margin, args.opacity_min, args.sor_k = 1e9, 0.0, 0
 
     # Exclude test scenes by SUBSTRING (so short ids like "10275..._5755_561"
     # match the full "segment-10275..._5775_561_with_camera_labels" dir name).
@@ -55,7 +64,8 @@ def main():
 
     common = dict(K=args.K, M=args.M, normalize=not args.no_normalize,
                   radius_margin=args.radius_margin, opacity_min=args.opacity_min,
-                  sor_k=args.sor_k, input_subsample=args.input_subsample)
+                  sor_k=args.sor_k, input_subsample=args.input_subsample,
+                  scale_override=(args.global_scale if args.global_scale > 0 else None))
     tasks = []
     for s in scenes:
         gd = gdense_path(args.gdense_dir, s, args.iterations)
