@@ -39,7 +39,7 @@ def _holdout_indices(L, n, mode):
     return _interior_indices(L, n)
 
 
-def cam_split_test_names(source, n_holdout=4, mode="interp"):
+def cam_split_test_names(source, n_holdout=4, mode="interp", frames=None):
     sparse = os.path.join(source, "sparse", "0")
     try:
         extr = read_extrinsics_binary(os.path.join(sparse, "images.bin"))
@@ -54,17 +54,21 @@ def cam_split_test_names(source, n_holdout=4, mode="interp"):
     test = []
     for cam, ns in sorted(groups.items()):
         ns = sorted(ns)
-        idx = _holdout_indices(len(ns), n_holdout, mode)
+        if frames is not None:                         # explicit per-camera indices
+            idx = [i for i in frames if 0 <= i < len(ns)]
+        else:
+            idx = _holdout_indices(len(ns), n_holdout, mode)
         test.extend(ns[i] for i in idx)
     return sorted(test)
 
 
-def write_cam_split(source, n_holdout=4, mode="interp"):
-    names = cam_split_test_names(source, n_holdout, mode)
+def write_cam_split(source, n_holdout=4, mode="interp", frames=None):
+    names = cam_split_test_names(source, n_holdout, mode, frames)
     out = os.path.join(source, "sparse", "0", "test.txt")
     with open(out, "w") as f:
         f.write("\n".join(names) + "\n")
-    print(f"[split] {out}: {len(names)} test images ({n_holdout}/camera, {mode}) -> {names}")
+    tag = f"frames={frames}" if frames is not None else f"{n_holdout}/cam, {mode}"
+    print(f"[split] {out}: {len(names)} test images ({tag}) -> {names}")
     return out
 
 

@@ -44,6 +44,11 @@ def main():
                          "\"--densify_grad_threshold 0.0004\" (anti-OOM on sparse scenes)")
     ap.add_argument("--epochs", type=int, default=200)
     ap.add_argument("--iterations", type=int, default=30000)
+    ap.add_argument("--encoder_type", default="concat",
+                    help="GS-Net encoder (paper uses concat)")
+    ap.add_argument("--holdout_frames", type=int, nargs="+", default=None,
+                    help="explicit per-camera SSE test frame indices (e.g. 4 9 = "
+                         "CARLA-SSE scheme); overrides --n_holdout")
     args = ap.parse_args()
     o = args.out_root
     os.makedirs(o, exist_ok=True)
@@ -67,7 +72,7 @@ def main():
         print(f"[skip train] {ckpt}")
     else:
         sh([PY, "-m", "gsnet.train_gsnet", "--corr_dir", corr, "--out_dir", model,
-            "--encoder_type", "geom", "--color_activation", "tanh",
+            "--encoder_type", args.encoder_type, "--color_activation", "tanh",
             "--w_rot", "0.1", "--w_pos", "10", "--T", "5", "--M", "3",
             "--in_memory", "1", "--epochs", str(args.epochs)], args.gpus[:1])
 
@@ -76,10 +81,11 @@ def main():
     #    GS-Net init from being washed out -> the variant most likely to show a
     #    positive in this sparse regime, per the CARLA-CSE finding).
     sse_off = sse + "_doff"
+    hf = ["--holdout_frames", *[str(f) for f in args.holdout_frames]] if args.holdout_frames else []
     for out, ex in ((sse, []), (sse_off, ["--train_extra", "--densify_until_iter 0"])):
         sh([PY, "-m", "gsnet.waymo_sse", "--root", args.root, "--test_scenes", *args.test_scenes,
             "--ckpt", ckpt, "--out_dir", out, "--n_holdout", str(args.n_holdout),
-            "--iterations", str(args.iterations), "--gpus", *[str(g) for g in args.gpus], *ex])
+            "--iterations", str(args.iterations), "--gpus", *[str(g) for g in args.gpus], *hf, *ex])
 
     print("\n=================== FINAL Waymo SSE (sparse wide-baseline) ===================")
     for label, out in (("densify-ON ", sse), ("densify-OFF", sse_off)):

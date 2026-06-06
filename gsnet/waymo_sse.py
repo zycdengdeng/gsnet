@@ -100,6 +100,9 @@ def main():
     ap.add_argument("--holdout_mode", choices=["interp", "extrap"], default="interp",
                     help="interp=interior frames (no holes); extrap=last-N frames "
                          "per camera (forward extrapolation, real coverage holes)")
+    ap.add_argument("--holdout_frames", type=int, nargs="+", default=None,
+                    help="explicit per-camera test frame indices (overrides n_holdout/"
+                         "mode); e.g. 4 9 = CARLA-SSE scheme")
     ap.add_argument("--skip_baseline", action="store_true")
     ap.add_argument("--skip_gsnet", action="store_true")
     ap.add_argument("--target_cams", nargs="+", default=[],
@@ -139,7 +142,7 @@ def main():
             write_camera_split(src, args.target_cams)
         else:
             src = scene_source(sc, tag)
-            write_cam_split(src, args.n_holdout, args.holdout_mode)
+            write_cam_split(src, args.n_holdout, args.holdout_mode, args.holdout_frames)
         src_by_scene[sc] = src
     args._src_by_scene = src_by_scene
 
