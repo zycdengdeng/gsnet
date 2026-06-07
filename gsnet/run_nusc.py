@@ -89,6 +89,9 @@ def main():
     ap.add_argument("--gdense_dir", default="",
                     help="reuse an existing G_dense dir (e.g. runs/nusc/gdense) across "
                          "variants so gdense isn't re-run; default = <out_root>/gdense")
+    ap.add_argument("--corr_dir", default="",
+                    help="reuse an existing corr dir (e.g. runs/nusc/corr) so corr isn't "
+                         "rebuilt -- e.g. swapping ONLY the encoder; default = <out_root>/corr")
     ap.add_argument("--gpus", type=int, nargs="+", default=[0, 1, 2, 3, 4, 5, 6, 7])
     ap.add_argument("--iterations", type=int, default=30000)
     ap.add_argument("--epochs", type=int, default=200)
@@ -120,8 +123,9 @@ def main():
                for n in args.densify_iters]
 
     o = args.out_root
-    corr, model, ev = (os.path.join(o, x) for x in ("corr", "model", "eval"))
+    model, ev = (os.path.join(o, x) for x in ("model", "eval"))
     gdense = args.gdense_dir or os.path.join(o, "gdense")   # reuse external G_dense if given
+    corr = args.corr_dir or os.path.join(o, "corr")         # reuse external corr if given
     os.makedirs(o, exist_ok=True)
     ckpt = os.path.join(model, "gsnet_latest.pt")
     pool = dict(min_free_mb=args.min_free_mb, max_retries=args.max_retries)
