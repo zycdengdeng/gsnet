@@ -126,7 +126,8 @@ def train(args):
 def _log(epoch, args, avg, logs, dt, save):
     if (epoch + 1) % args.log_every == 0 or epoch == 0:
         print(f"epoch {epoch+1:3d}/{args.epochs}  loss={avg:.5f}  {dt:.2f}s  "
-              + "  ".join(f"{k}={float(v):.4f}" for k, v in logs.items() if k != "loss"))
+              + "  ".join(f"{k}={float(v):.4f}" for k, v in logs.items() if k != "loss"),
+              flush=True)
     if (epoch + 1) % args.save_every == 0 or epoch + 1 == args.epochs:
         save(str(epoch + 1))
 
