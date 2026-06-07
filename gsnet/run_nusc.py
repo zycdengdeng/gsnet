@@ -316,14 +316,16 @@ def aggregate(results, clips, dtags, eval_iters, gd_times, infer_times, model_di
         L.append(f"| {d} | {avg('sfm',d,final,'LPIPS'):.3f} | {avg('mvs',d,final,'LPIPS'):.3f} "
                  f"| {avg('gsnet',d,final,'LPIPS'):.3f} |")
 
-    tr = "?"
-    cfgp = os.path.join(model_dir, "config.json")
+    tr, floss = "?", {}
+    cfgp = os.path.join(model_dir, "train_times.json")
     if os.path.exists(cfgp):
-        tr = f"{json.load(open(cfgp)).get('total_seconds', 0)/60:.1f} min"
+        cj = json.load(open(cfgp))
+        tr = f"{cj.get('total_seconds', 0)/60:.1f} min"
+        floss = cj.get("final_loss", {})
     inf = (sum(infer_times.values()) / len(infer_times)) if infer_times else float("nan")
     gdm = (sum(gd_times.values()) / len(gd_times) / 60) if gd_times else float("nan")
     L += ["", "## Timing / efficiency",
-          f"- GS-Net **train** (one-off): {tr}",
+          f"- GS-Net **train** (one-off): {tr}" + (f"  final_loss={floss}" if floss else ""),
           f"- GS-Net **infer** (one forward pass, per clip): **{inf:.2f}s avg**",
           f"- G_dense build (3DGS {final} per train clip): {gdm:.1f} min avg",
           "", f"| densify | init | optim(min) | #Gaussians@{final} |", "|---|---|---|---|"]

@@ -111,12 +111,14 @@ def train(args):
             _log(epoch, args, running / max(1, len(dl)), logs, epoch_times[-1], save)
 
     total = time.time() - t_start
+    final_loss = {k: float(v) for k, v in logs.items()} if "logs" in dir() else {}
     with open(os.path.join(args.out_dir, "train_times.json"), "w") as f:
         json.dump({"total_seconds": total, "epochs": args.epochs, "num_points": N,
                    "batch_size": bs, "encoder": cfg.encoder_type,
-                   "weights": args.weights,
+                   "weights": args.weights, "final_loss": final_loss,
                    "avg_epoch_seconds": sum(epoch_times) / max(1, len(epoch_times))},
                   f, indent=2)
+    print(f"[final_loss] {final_loss}")
     print(f"Training done in {total:.1f}s "
           f"(avg {sum(epoch_times)/max(1,len(epoch_times)):.2f}s/epoch).")
 

@@ -155,7 +155,7 @@ def main():
          "|---|---|---|---|---|---|"]
     for ep, t in configs:
         g = avg(tag(ep, t))
-        cfgp = os.path.join(model_dir(ep, t), "config.json")
+        cfgp = os.path.join(model_dir(ep, t), "train_times.json")
         tr = json.load(open(cfgp)).get("total_seconds", 0) / 60 if os.path.exists(cfgp) else 0
         L.append(f"| {tag(ep,t)} | {ep} | {t} | {g:.2f} | {g-sfm:+.2f} | {tr:.1f} |")
     table = "\n".join(L)
