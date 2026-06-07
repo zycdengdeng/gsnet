@@ -92,7 +92,13 @@ def main():
         build_for_sequence(None, gd, out, input_override=inp, **common)
         if (i + 1) % 10 == 0:
             print(f"[recur] {i+1}/{len(tasks)}", flush=True)
-    print(f"[recur] built {len(tasks)} recursive-corr files -> {args.out_dir}")
+    # marker so run_nusc --corr_dir treats this as a finished corr (won't rebuild)
+    import json
+    n_npz = len(glob.glob(os.path.join(args.out_dir, "*.npz")))
+    json.dump({"recursive": True, "subsamples": args.subsamples, "n_npz": n_npz,
+               "merged_sfm": bool(args.sfm_corr)},
+              open(os.path.join(args.out_dir, "build_times.json"), "w"), indent=2)
+    print(f"[recur] built {len(tasks)} recursive files; corr dir has {n_npz} npz -> {args.out_dir}")
 
 
 if __name__ == "__main__":
