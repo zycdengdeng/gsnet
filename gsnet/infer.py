@@ -110,12 +110,18 @@ def run(args):
         print(f"[infer] scale/rot not predicted -> distCUDA2 std-init scale "
               f"(median={np.median(s_lin):.4f})")
 
-    P = save_gaussians_ply(
-        args.out,
-        mu_all, np.concatenate(rgbs), scale_all,
-        np.concatenate(quats), np.concatenate(ops),
-        opacity_thresh=args.opacity_thresh,
-    )
+    rgb_all, op_all = np.concatenate(rgbs), np.concatenate(ops)
+    # Plain xyz+rgb dump (only visible Gaussians) for visual inspection.
+    if args.points_out:
+        from gsnet.io import save_xyzrgb_ply
+        keep = op_all > args.opacity_thresh
+        n = save_xyzrgb_ply(args.points_out, mu_all[keep], rgb_all[keep])
+        print(f"[infer] xyzrgb dump: {n} visible pts -> {args.points_out}")
+    P = 0
+    if args.out:
+        P = save_gaussians_ply(args.out, mu_all, rgb_all, scale_all,
+                               np.concatenate(quats), op_all,
+                               opacity_thresh=args.opacity_thresh)
     dt = time.time() - t0
     print(f"[infer] {N} sparse pts -> {P} Gaussians (T={cfg.T}) in {dt:.1f}s -> {args.out}")
     return dt
@@ -125,7 +131,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", required=True)
     ap.add_argument("--sparse", required=True, help="sparse SfM .ply/.bin/.txt")
-    ap.add_argument("--out", required=True, help="output init .ply")
+    ap.add_argument("--out", default="", help="output 3DGS init .ply (optional)")
+    ap.add_argument("--points_out", default="",
+                    help="also dump a plain xyz+rgb .ply (visible Gaussians only) "
+                         "for visual inspection")
     ap.add_argument("--chunk", type=int, default=200000)
     ap.add_argument("--opacity_thresh", type=float, default=0.0)
     ap.add_argument("--no_normalize", action="store_true")

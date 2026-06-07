@@ -74,3 +74,18 @@ def save_gaussians_ply(
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     PlyData([PlyElement.describe(elements, "vertex")]).write(path)
     return P
+
+
+def save_xyzrgb_ply(path, xyz, rgb01):
+    """Plain xyz+rgb point cloud (uint8 color) for easy visual inspection in
+    MeshLab/CloudCompare. rgb01 in [0,1]."""
+    import os
+    xyz = np.asarray(xyz, np.float32).reshape(-1, 3)
+    rgb = (np.clip(np.asarray(rgb01, np.float32).reshape(-1, 3), 0, 1) * 255).astype(np.uint8)
+    el = np.empty(xyz.shape[0], dtype=[("x", "f4"), ("y", "f4"), ("z", "f4"),
+                                       ("red", "u1"), ("green", "u1"), ("blue", "u1")])
+    el["x"], el["y"], el["z"] = xyz[:, 0], xyz[:, 1], xyz[:, 2]
+    el["red"], el["green"], el["blue"] = rgb[:, 0], rgb[:, 1], rgb[:, 2]
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    PlyData([PlyElement.describe(el, "vertex")]).write(path)
+    return xyz.shape[0]
