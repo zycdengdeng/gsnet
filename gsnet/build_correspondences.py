@@ -38,10 +38,13 @@ from gsnet.common import (
 
 def build_for_sequence(sparse_path, gdense_path, out_path, K=5, M=3,
                        normalize=True, subsample=1.0, input_subsample=1.0,
-                       image_feats_dir=None, scale_override=None,
+                       image_feats_dir=None, scale_override=None, input_override=None,
                        **filt_kwargs):
     t0 = time.time()
-    cxyz, crgb = read_points_any(sparse_path)
+    if input_override is not None:                       # in-memory input points (idea B:
+        cxyz, crgb = input_override                      # subsampled G_dense -> full G_dense)
+    else:
+        cxyz, crgb = read_points_any(sparse_path)
     # Optional subsampling of the INPUT sparse points (train GS-Net to densify
     # from a sparser input -> dense G_dense target; for sparse-input regimes).
     if input_subsample < 1.0:

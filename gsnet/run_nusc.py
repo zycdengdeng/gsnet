@@ -102,6 +102,14 @@ def main():
                          "1:1, so T==K). Bigger = denser init (T=15 -> ~3x denser).")
     ap.add_argument("--global_scale", type=float, default=45.0)
     ap.add_argument("--no_filter", action="store_true")
+    ap.add_argument("--ckpt", default="",
+                    help="reuse an external trained ckpt (skips training); e.g. "
+                         "runs/nusc/model/gsnet_latest.pt for an inference-only variant")
+    ap.add_argument("--iter_passes", type=int, default=1,
+                    help=">1: iterative/recursive densification init (idea A) -- run "
+                         "GS-Net N passes, feeding high-confidence output back in")
+    ap.add_argument("--conf_thresh", type=float, default=0.5,
+                    help="opacity threshold for high-confidence point selection between passes")
     ap.add_argument("--densify_iters", type=int, nargs="+", default=[0, 2000, 5000, 15000],
                     help="densify_until_iter values to sweep (find nuScenes' OWN sweet "
                          "spot). 0=off, 15000=3DGS default. tag=d<n>.")
@@ -131,7 +139,7 @@ def main():
     gdense = args.gdense_dir or os.path.join(o, "gdense")   # reuse external G_dense if given
     corr = args.corr_dir or os.path.join(o, "corr")         # reuse external corr if given
     os.makedirs(o, exist_ok=True)
-    ckpt = os.path.join(model, "gsnet_latest.pt")
+    ckpt = args.ckpt or os.path.join(model, "gsnet_latest.pt")   # reuse external ckpt if given
     pool = dict(min_free_mb=args.min_free_mb, max_retries=args.max_retries)
     lock = threading.Lock()
 
@@ -214,8 +222,15 @@ def main():
         if os.path.exists(init_ply(c)):
             return
         os.makedirs(os.path.dirname(init_ply(c)), exist_ok=True)
-        s = on_gpu([PY, "-m", "gsnet.infer", "--ckpt", ckpt, "--sparse", sparse_points(c),
-                    "--out", init_ply(c), "--norm_scale", str(args.global_scale)], gpu)
+        if args.iter_passes > 1:                      # idea A: recursive densification init
+            cmd = [PY, "-m", "gsnet.infer_iterative", "--ckpt", ckpt,
+                   "--sparse", sparse_points(c), "--out", init_ply(c),
+                   "--passes", str(args.iter_passes), "--conf_thresh", str(args.conf_thresh),
+                   "--norm_scale", str(args.global_scale)]
+        else:
+            cmd = [PY, "-m", "gsnet.infer", "--ckpt", ckpt, "--sparse", sparse_points(c),
+                   "--out", init_ply(c), "--norm_scale", str(args.global_scale)]
+        s = on_gpu(cmd, gpu)
         with lock:
             infer_times[seg_name(c)] = s
             jdump(infer_times, itp)
