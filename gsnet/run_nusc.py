@@ -146,7 +146,7 @@ def main():
     def gd_fn(c, gpu):
         if os.path.exists(gd_path(c)):
             return
-        si = [x for i in gd_save for x in ("--save_iterations", str(i))]
+        si = ["--save_iterations", *[str(i) for i in gd_save]]
         s = on_gpu([PY, "train.py", "-s", dense_dir(c), "-m", os.path.join(gdense, seg_name(c)),
                     "--init_pcd", fused_ply(c), "--iterations", str(final),
                     "--test_iterations", str(final), *si,
@@ -233,14 +233,15 @@ def main():
             ia = ([] if init == "sfm" else
                   ["--init_pcd", fused_ply(c)] if init == "mvs" else
                   ["--gsnet_init", init_ply(c)])
-            si = [x for i in eval_iters for x in ("--save_iterations", str(i))]
-            ti = [x for i in eval_iters for x in ("--test_iterations", str(i))]
-            if not os.path.exists(ck_ply(mp, final)):     # (re)train only if final ckpt missing
+            si = ["--save_iterations", *[str(i) for i in eval_iters]]
+            ti = ["--test_iterations", *[str(i) for i in eval_iters]]
+            if not all(os.path.exists(ck_ply(mp, i)) for i in eval_iters):  # retrain if any ckpt missing
                 s = on_gpu([PY, "train.py", "-s", src, "-m", mp, "--eval",
                             "--iterations", str(final), *ti, *si,
                             "--disable_viewer", "--quiet", *ia, *dextra], gpu)
-            for i in eval_iters:                          # render every checkpoint
-                on_gpu([PY, "render.py", "-m", mp, "--iteration", str(i),
+            for i in eval_iters:                          # render every checkpoint that exists
+                if os.path.exists(ck_ply(mp, i)):
+                    on_gpu([PY, "render.py", "-m", mp, "--iteration", str(i),
                         "--skip_train", "--quiet"], gpu)
             on_gpu([PY, "metrics.py", "-m", mp], gpu)
         d = json.load(open(rj))
