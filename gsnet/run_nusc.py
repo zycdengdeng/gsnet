@@ -96,6 +96,10 @@ def main():
     ap.add_argument("--iterations", type=int, default=30000)
     ap.add_argument("--epochs", type=int, default=200)
     ap.add_argument("--encoder_type", default="concat")
+    ap.add_argument("--T", type=int, default=5,
+                    help="expansion factor = #Gaussians predicted per sparse point. "
+                         "Also sets corr K (loss matches T heads to K nearest G_dense "
+                         "1:1, so T==K). Bigger = denser init (T=15 -> ~3x denser).")
     ap.add_argument("--global_scale", type=float, default=45.0)
     ap.add_argument("--no_filter", action="store_true")
     ap.add_argument("--densify_iters", type=int, nargs="+", default=[0, 2000, 5000, 15000],
@@ -175,7 +179,7 @@ def main():
         cmd = [PY, "-m", "gsnet.waymo_corr", "--root", args.root, "--gdense_dir", gdense,
                "--out_dir", corr, "--test_scenes", *args.test_scenes,
                "--iterations", str(args.gdense_iter), "--workers", "8",
-               "--global_scale", str(args.global_scale)]
+               "--K", str(args.T), "--global_scale", str(args.global_scale)]
         if args.no_filter:
             cmd.append("--no_filter")
         sh(cmd)
@@ -189,7 +193,7 @@ def main():
         def tr_fn(_, gpu):
             on_gpu([PY, "-m", "gsnet.train_gsnet", "--corr_dir", corr, "--out_dir", model,
                     "--encoder_type", args.encoder_type, "--color_activation", "tanh",
-                    "--w_rot", "0.1", "--w_pos", "10", "--T", "5", "--M", "3",
+                    "--w_rot", "0.1", "--w_pos", "10", "--T", str(args.T), "--M", "3",
                     "--in_memory", "1", "--epochs", str(args.epochs)], gpu)
         run_jobs(["train"], args.gpus, tr_fn, label="train", **pool)
         assert os.path.exists(ckpt), "training produced no ckpt"
