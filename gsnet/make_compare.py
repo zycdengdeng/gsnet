@@ -36,9 +36,11 @@ def montage(imgs, labels, pad=4, bar=20):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--exp_dir", required=True, help="e.g. runs/nusc_filt/eval")
+    ap.add_argument("--exp_dir", required=True, help="e.g. runs/nusc_filt/eval  OR  runs/cse_d2000_s0")
     ap.add_argument("--clips", nargs="+", required=True)
-    ap.add_argument("--densify", default="d15000")
+    ap.add_argument("--densify", default="d15000",
+                    help="densify tag in the model-dir name; '' (empty) for CSE-style "
+                         "dirs that are just <init>/ (e.g. baseline, gsnet)")
     ap.add_argument("--iter", type=int, default=30000)
     ap.add_argument("--inits", nargs="+", default=["sfm", "gsnet", "mvs"])
     ap.add_argument("--out_dir", required=True)
@@ -47,8 +49,8 @@ def main():
     os.makedirs(args.out_dir, exist_ok=True)
 
     def d_of(init, sub):
-        return os.path.join(args.exp_dir, "{c}", f"{init}_{args.densify}",
-                            "test", f"ours_{args.iter}", sub)
+        sub_dir = f"{init}_{args.densify}" if args.densify else init
+        return os.path.join(args.exp_dir, "{c}", sub_dir, "test", f"ours_{args.iter}", sub)
 
     n = 0
     for c in args.clips:
