@@ -22,15 +22,11 @@
 - **🆕当前主攻 = nuScenes SSE(环视,GS-Net真实数据主场)**：6相机360°ring高共视 ≈ CARLA环视(≠Waymo前向共视<10%)。数据`/mnt/zihanw/gsnet_nusc/`50clip(5场景348/332/331/299/325×10clip,每clip 6相机×10帧=60图,`colmap/dense/{sparse/0含points3D.bin, fused.ply}`齐,米制world→cam,已验证)。
 - **⭐nuScenes 首结果(2026-06-06,`runs/nusc/nusc_eval.md`,30k-MVS-raw-no_filter target)——关键:没封死(≠Waymo)**：可信工作点=densify-off(d0,SfM 22.58,low-20s合理)。**GS-Net 全负(GSNet−SfM: d0−0.36/d2000−1.51/d5000−0.42/d15000−0.32)**,但**MVS−SfM=+0.76~+1.49(密化越多MVS越占优)=天花板真实存在且不小→情形①(预测质量可修),不是Waymo那种封死**。GS-Net 把16590 SfM点扩成82904高斯却比纯SfM还差=扩出来的高斯质量不够。**亮点**:d0下GS-Net LPIPS 0.419<SfM 0.460(感知更好+0.04)、优化最快(10.2min<SfM13.6<MVS19.4)、推理6.49s。**头号嫌疑=`--no_filter`**(MVS干净→赢,我们raw target带floater→GS-Net学会预测floater→输)。**⇒下一步:开过滤重训(`run_nusc --out_root runs/nusc_filt --gdense_dir runs/nusc/gdense`去掉--no_filter,复用gdense)**,看GSNet−SfM是否上抬。后续杠杆:15k target(需重跑gdense,首跑bug只存了30k)/hp(epoch/T)/扩展密度。**判生死bug已修**(多迭代存档曾写成重复flag→argparse只留最后一个→render中间checkpoint崩→全nan;已改单flag多值)。
 - **nuScenes 设定(已定)**：测试=每场景最后clip `*_clip_09`(5个),训练=其余45clip全图;抽帧=CARLA-SSE`[4,9]`(12测/48训);encoder=**concat**;**对齐=全局scale 45**(米制!逐clip 95分位23~72m差3倍会让Gaussian尺寸目标欠定→center逐clip中位数+scale固定45;`--global_scale`/infer`--norm_scale`绑定);**`--no_filter`**(原始G_dense学)。**评测矩阵**:3 init{**sfm基线/mvs(fused.ply)/gsnet**}×密化扫{0/2000/5000/15000}(找nuScenes自己甜点,不复用CARLA 2000)×迭代曲线{7k/15k/30k}(看30k是否抹平),全程计时(推理/训练/优化/高斯数,时间可能是优势)。
-- **🔬5个实验在飞(2026-06-06,都reuse `runs/nusc/gdense`,各隔离一个变量,对照基线GSNet−SfM@d0=−0.36)——回来逐个cat `runs/nusc_<x>/nusc_eval.md` 看d0行GSNet−SfM**：
-  | x | 隔离变量 | 命令要点 | 看 |
-  |---|---|---|---|
-  | **nusc_filt** | target开过滤(去floater) | 去掉`--no_filter` | 头号嫌疑,过滤是否抬升 |
-  | **nusc_geom** | encoder=geom | `--corr_dir runs/nusc/corr --encoder_type geom` | 换encoder是否帮 |
-  | **nusc_T15** | 密度T=15(3×稠,~250k≈MVS) | `--T 15` | 用户看点云觉得"密化不够" |
-  | **nusc_iterA** | 迭代推理2-pass(ideaA) | `--ckpt runs/nusc/model/... --iter_passes 2` | 攻SfM锚点限制(推理时,OOD风险) |
-  | **nusc_recurB** | 递归训练(密度无关,ideaB) | `build_recursive_corr`→`--corr_dir ...recurB/corr --iter_passes 2` | 治本:训练时多密度增广让迭代in-dist |
-  **判读**:任一d0转正(GSNet−SfM>0)=突破口;filt/geom/T15=改预测质量3线,iterA/recurB=用户"迭代密化"想法。⚠iterA/recurB看`grep [iter]`的high-conf数,若pass2=0则`--conf_thresh 0.3`重跑。**机制洞察(用户)**:GS-Net只能绕SfM点扩(锚点限制),填不了无点空洞→MVS赢部分靠填洞;迭代/递归=让密化越过锚点。
+- **🎉nuScenes 5实验结果(2026-06-07)——过滤=赢家,首次转正**：GSNet−SfM逐密化(基线nusc/filt/geom/T15/iterA/recurB):
+  - **`filt`(开过滤,去floater)=突破**:d5000 **+0.08**、d15000 **+0.28** GS-Net超SfM(基线同档−0.42/−0.32)→**raw target的floater教坏网络坐实,过滤锁定以后都开**。
+  - `geom`帮一点(d15000+0.16<filt);`T15`(no_filter)**反更差**(全负最深)=floater被放大15×confound,**非"密度无用",要filter+T15干净测**;`iterA/recurB`基本没动(无效)——`[iter]`日志pass2 high-conf仅60~378(op>0.5几乎全筛掉)→**conf_thresh=0.5掐死迭代,要降0.2重测**。
+  - **诚实caveat**:转正都在高密化档(d5000/d15000,SfM被过度密化到19);**最佳工作点d0(SfM22.5)仍负(−0.43)**;MVS@d0=+0.79证明d0有空间,GS-Net d0预测(无密化清理)不够准。**当前定位='GS-Net改善标准densify-on 3DGS +0.28',尚未在最佳基线赢**。
+  - **下一步**:①`filtT15`(filter+T=15,干净测密度) ②`iterA2`(filter ckpt+conf0.2+3pass,真测迭代) ③filter+geom组合 ④若稳,多seed钉+0.28。
 - **后续(有戏再上)**：`run_nusc_hpsweep`(epoch/T调参,复用corr)；15k target(gdense已修存15k,后续变体可`--gdense_iter 15000`);filter+最优组合;**CSE(留一相机=CARLA CSE真实版)**:`waymo_sse --source_cams cam0..4 --target_cams cam5`。
 - **机制(一句话)**：GS-Net=局部稠密化先验,只在"SfM不足 + 3DGS自带密化补不回"的**覆盖洞/外推regime**有用(CARLA环视/nuScenes环视=主场;Waymo前向走廊=无洞=无效;GS-Net能赢的区域=无纹理/远景=PSNR贡献最低,故Waymo难涨是结构性的)。
 - **诚实定位(rebuttal主线)**：CARLA两正(SSE+1.69/CSE+1.89)是硬底;真实数据正结果赌 nuScenes 环视;用"覆盖度/视角充分性"刻画适用域(重叠/环视rig有效,前向disjoint rig无效)。Reviewer A(encoder打平,故用concat不纠结)/C(优雅降级)成立(排310)。
