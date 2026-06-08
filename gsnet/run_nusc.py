@@ -110,6 +110,9 @@ def main():
                          "GS-Net N passes, feeding high-confidence output back in")
     ap.add_argument("--conf_thresh", type=float, default=0.5,
                     help="opacity threshold for high-confidence point selection between passes")
+    ap.add_argument("--train_seed", type=int, default=None,
+                    help="GS-Net training seed (same data split, different init/shuffle) "
+                         "for training-seed multiseed variance studies")
     ap.add_argument("--densify_iters", type=int, nargs="+", default=[0, 2000, 5000, 15000],
                     help="densify_until_iter values to sweep (find nuScenes' OWN sweet "
                          "spot). 0=off, 15000=3DGS default. tag=d<n>.")
@@ -199,10 +202,11 @@ def main():
         print(f"[skip train] {ckpt}", flush=True)
     else:
         def tr_fn(_, gpu):
+            seed = ["--seed", str(args.train_seed)] if args.train_seed is not None else []
             on_gpu([PY, "-m", "gsnet.train_gsnet", "--corr_dir", corr, "--out_dir", model,
                     "--encoder_type", args.encoder_type, "--color_activation", "tanh",
                     "--w_rot", "0.1", "--w_pos", "10", "--T", str(args.T), "--M", "3",
-                    "--in_memory", "1", "--epochs", str(args.epochs)], gpu)
+                    "--in_memory", "1", "--epochs", str(args.epochs), *seed], gpu)
         run_jobs(["train"], args.gpus, tr_fn, label="train", **pool)
         assert os.path.exists(ckpt), "training produced no ckpt"
 
