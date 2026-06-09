@@ -105,10 +105,35 @@ def main():
     ap.add_argument("--ply_gsnet", required=True)
     ap.add_argument("--out_dir", required=True)
     ap.add_argument("--white_bg", action="store_true")
+    ap.add_argument("--dump_poses", default="",
+                    help="also write the exact novel poses (world_to_cam 4x4 + intrinsics) "
+                         "to this JSON so collaborators can render OTHER methods at the "
+                         "same viewpoints")
     args = ap.parse_args()
     os.makedirs(args.out_dir, exist_ok=True)
 
     Rw2c, Tw2c, cam = get_base(args.colmap, args.base)
+    fx = float(cam.params[0])
+    fy = float(cam.params[1]) if cam.model == "PINHOLE" else float(cam.params[0])
+    cx = float(cam.params[2]) if cam.model == "PINHOLE" else float(cam.params[1])
+    cy = float(cam.params[3]) if cam.model == "PINHOLE" else float(cam.params[2])
+
+    if args.dump_poses:
+        import json
+        out = []
+        for tag, dpos, dyaw, dpitch in OFFSETS:
+            Rn, Tn = perturb(Rw2c, Tw2c, dpos, dyaw, dpitch)
+            w2c = np.eye(4); w2c[:3, :3] = Rn; w2c[:3, 3] = Tn
+            out.append({"tag": tag, "dpos_cam_m": list(dpos), "dyaw_deg": dyaw,
+                        "dpitch_deg": dpitch, "world_to_cam": w2c.tolist(),
+                        "fx": fx, "fy": fy, "cx": cx, "cy": cy,
+                        "width": cam.width, "height": cam.height})
+        json.dump({"base_image": args.base, "convention": "OpenCV cam frame "
+                   "(x right,y down,z forward); world_to_cam is 4x4 [R|t], "
+                   "x_cam = R @ x_world + t", "views": out},
+                  open(args.dump_poses, "w"), indent=2)
+        print(f"[novel] dumped {len(out)} poses -> {args.dump_poses}")
+
     gb, gg = load_g(args.ply_baseline), load_g(args.ply_gsnet)
     bg = torch.tensor([1., 1, 1] if args.white_bg else [0., 0, 0], device="cuda")
     print(f"[novel] base={args.base} {cam.width}x{cam.height}; "
