@@ -108,6 +108,9 @@ def main():
     ap.add_argument("--iter_passes", type=int, default=1,
                     help=">1: iterative/recursive densification init (idea A) -- run "
                          "GS-Net N passes, feeding high-confidence output back in")
+    ap.add_argument("--train_exclude", nargs="+", default=None,
+                    help="substrings to EXCLUDE from training/corr (default = test_scenes). "
+                         "For cross-scene LOSO: e.g. '348' drops the whole held-out scene.")
     ap.add_argument("--conf_thresh", type=float, default=0.5,
                     help="opacity threshold for high-confidence point selection between passes")
     ap.add_argument("--train_seed", type=int, default=None,
@@ -147,14 +150,19 @@ def main():
     lock = threading.Lock()
 
     all_clips = discover_scenes(args.root)
+    # corr/training EXCLUDES anything matching --train_exclude (default = test_scenes).
+    # For true cross-scene (LOSO): --train_exclude 348 drops the WHOLE held-out
+    # scene from training, while --test_scenes 348_clip_0X picks the eval clips.
+    excl = args.train_exclude if args.train_exclude else args.test_scenes
     test_set = {seg_name(c) for c in all_clips
                 if any(t in seg_name(c) for t in args.test_scenes)}
-    train_clips = [c for c in all_clips if seg_name(c) not in test_set]
+    excl_set = {seg_name(c) for c in all_clips if any(t in seg_name(c) for t in excl)}
+    train_clips = [c for c in all_clips if seg_name(c) not in excl_set]
     test_clips = [resolve_scene(args.root, t) for t in args.test_scenes]
     assert len(test_set) == len(args.test_scenes), \
         f"test match mismatch: {sorted(test_set)} vs {args.test_scenes}"
-    print(f"[nusc] {len(all_clips)} clips: {len(train_clips)} train, "
-          f"{len(test_clips)} test={sorted(test_set)}", flush=True)
+    print(f"[nusc] {len(all_clips)} clips: {len(train_clips)} train "
+          f"(exclude {sorted(excl_set)}), {len(test_clips)} test={sorted(test_set)}", flush=True)
 
     # ---- 1) G_dense on TRAIN clips (resumable, timed) ----
     gd_times = {}
@@ -188,7 +196,7 @@ def main():
     # ---- 2) correspondences (test excluded) ----
     if not os.path.exists(os.path.join(corr, "build_times.json")):
         cmd = [PY, "-m", "gsnet.waymo_corr", "--root", args.root, "--gdense_dir", gdense,
-               "--out_dir", corr, "--test_scenes", *args.test_scenes,
+               "--out_dir", corr, "--test_scenes", *excl,
                "--iterations", str(args.gdense_iter), "--workers", "8",
                "--K", str(args.T), "--global_scale", str(args.global_scale)]
         if args.no_filter:
