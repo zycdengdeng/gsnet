@@ -1,7 +1,7 @@
 # GS-Net 项目状态与交接文档 (PROJECT STATE)
 
 > **用途**：记忆压缩后的"续命"文档。读完即可完整理解任务/数据/代码/流程/结果/当前路径，性能不退化。
-> **最后更新**：2026-06-07晚（nuScenes:过滤=唯一有效杠杆filt+concat+T5=**+0.28@d15000**(其它杠杆全失败,根因=排名对齐损失→待Chamfer);**nuScenes CSE诊断弱(共视2-9%≈Waymo,放弃)→改定性外插viz(render_novel)**;**下游任务验证=感知保真度(深度,CARLA CSE+nuScenes SSE,用户别窗口做)**回应Reviewer;CARLA SSE+1.69硬底/CSE+1.89带densify caveat;合作者文档全发;见§0.000）
+> **最后更新**：2026-06-08（nuScenes filt+concat+T5=**+0.28@d15000**;**LOSO真跨场景已铺**(--train_exclude,单折348+5折命令已给,结果未回;45/5=「已见场景未见序列」=CARLA协议同构,诚实写法已定稿,绝不包装成cross-scene);训练种子multiseed结果未回;下游感知数据已备好(prep_downstream+DOWNSTREAM_DATA.md);网络vs论文差异梳理(颜色tanh+权重0.1:10:1);CARLA SSE+1.69硬底;见§0.000）
 > **分支**：`claude/festive-feynman-80Vw3`（push 到此；用户服务器 `git pull`）
 
 ---
@@ -28,8 +28,11 @@
   - **⚠️+0.28靠5clip且逐clip巨散(d15000:+1.39/−0.04/−0.02/+0.62/−0.54,靠348/299撑)**→真不确定性是**测试集太小**,非seed。
 - **❌nuScenes CSE 诊断=弱,放弃(2026-06-07,`waymo_cam_overlap`)**：共视低——两两重叠仅**2~9%**(和Waymo<10%同级,非CARLA高共视!),LOCO最好=cam0(FRONT)被其余5覆盖**~20%**(<25%可行线)。**根因:nuScenes 6相机为360°最小重叠设计(60°间隔),≠CARLA 12相机密集环视(30°)→我"环视=高共视"前提错了,nuScenes共视更像Waymo。** 留整相机CSE=80%视野无人看到→定量CSE死。**⇒CSE不投,改定性外插。**
 - **🎨定性外插可视化(替代量化CSE,2026-06-07,`render_novel`)**：把相机偏移到20个训练没见过的外插位姿(left/right±1~2m/up/fwd/yaw±10~25°/pitch/组合),渲染baseline-init vs GS-Net-init并排([左baseline|右gsnet])。无GT无指标=纯视觉证据"GS-Net稠密init外插时空洞/floater更少"。全5clip×6相机已渲(`/mnt/zihanw/nusc_novel/`)。`--dump_poses`导确切world_to_cam JSON给合作者测别的方法。
-- **📋下游任务验证(回应Reviewer"只在3DGS内评估、没证data reuse价值",2026-06-07,用户去别窗口做)**：**感知保真度**——预训练模型M跑{真值/baseline渲染/gsnet渲染},以**M(真值)当pseudo-GT**,比`metric(M(gsnet渲染),M(真值)) vs (baseline)`。**首推深度**(Depth-Anything,因果最直接:GS-Net改几何→深度=几何,且跨域最稳),分割/检测次之。**场景:CARLA CSE(`runs/cse_d2000_s0/<id>/{baseline,gsnet}/test/ours_30000/{renders,gt}`,大增益但合成有域gap) + nuScenes SSE(`runs/nusc_filt/eval/<clip>/{sfm,gsnet}_d15000/...`,真实域无gap,增益小)两条**。renders/gt按文件名配对。
-- **🔬在跑/待办(2026-06-07)**：①**训练种子multiseed**(`filt_seed1-3`同划分重训,`dump_multiseed`逐seed+逐clip→`runs/nusc_filt_multiseed.md`)钉+0.28训练方差。②**扩测试集10clip**(每场景clip_08+09=10测/40训,真firm-up,解决clip散度)。③**Chamfer损失**(治本扩展,见根因反思)。④下游感知(用户别窗口)。
+- **🌍真·跨场景 LOSO(2026-06-08,`--train_exclude`已加)**：**当前45/5不是跨场景**——同场景相邻clip中心仅差5~10m(视野半径~45m),测试clip_09的区域被训练clip大量看过=「已见场景的未见序列」。**真跨场景=LOSO**:`--train_exclude 348`把整场景10段排出训练(corr只用其余4场景40段重训),测被留场景的clip_01/05/09。单折348命令已给(~2.5h);5折循环(348/332/331/299/325轮流,串行~10h)命令已给→`runs/nusc_xscene_<S>`。⚠️聚合不能直接用dump_multiseed(每折只测自己3clip)→**待写`dump_loso.py`**。**机制预判**:GS-Net学的是局部稠密化先验(非场景级),城市驾驶局部统计同域→理论上应能泛化;且只有5场景没法"筛相似"(留1只剩4全得用),scene_similarity可当预诊断(解释用,非筛选用)。
+- **✍️45/5的诚实写法(2026-06-08定稿,别包装成跨场景!)**：**关键发现:论文自己的CARLA SSE协议就是「已见场景的未见序列」**(测试序列110与训练101-109同场景/town)→nuScenes 45/5是它的**精确复刻**。写法:"Following the CARLA protocol, we hold out one clip per scene; test clips are **unseen sequences**(帧/轨迹/重建从未在训练出现),drawn from the same five scenes"——术语用**held-out/unseen clips**,主动交代同场景(先于审稿人),协议一致性是加分。**跨场景claim由CARLA LOSO(+1.30)承担**;nuScenes LOSO好就并排报,差就limitation("4训练场景diversity不足,CARLA大池子可泛化")。**绝不暗示45/5=cross-scene**(一查就穿,诚信问题>结果差)。
+- **🔧网络vs论文的差异(2026-06-08梳理,rebuttal备用)**：后处理仅一处不同——**颜色偏移激活 sigmoid(论文,只能调亮)→tanh(可亮可暗)**;训练损失权重 等权(论文)→**0.1:10:1(w_rot:w_pos:其余)**(归一化后量级失衡,调平)。其余(位置tanh/尺度sigmoid/四元数单位化/不透明度tanh)与论文一致。**=最终配方`tanh:0.1:10:1`的全部差异,增益来自这个formulation而非encoder**。
+- **📋下游任务验证(回应Reviewer"只在3DGS内评估、没证data reuse价值",2026-06-07,用户去别窗口做)**：**感知保真度**——预训练模型M跑{真值/baseline渲染/gsnet渲染},以**M(真值)当pseudo-GT**,比`metric(M(gsnet渲染),M(真值)) vs (baseline)`。用户的**Depth_Seg_eval库**(深度DepthAnythingV2/分割Mask2Former/SAM边缘,要`_eval_frames/<cam>/{gen,gt}/`格式)。**已备好**:`prep_downstream.py`(把我们渲染软链成该格式,`--mode cse/nusc`)+`DOWNSTREAM_DATA.md`(数据说明已发)。场景:CARLA CSE(`runs/cse_d2000_s0`,大增益/合成域gap→首推深度) + nuScenes SSE(`runs/nusc_filt/eval`,真实域无gap)。
+- **🔬在跑/待办(2026-06-08)**：①训练种子multiseed(`filt_seed1-3`,`dump_multiseed`→`runs/nusc_filt_multiseed.md`)钉+0.28训练方差——**结果未回**。②**LOSO跨场景**(单折348先看信号,5折过夜)——**结果未回**;待写`dump_loso.py`聚合。③扩测试集10clip(每场景clip_08+09,解决clip散度)。④Chamfer损失(治本扩展)。⑤下游感知(用户别窗口,数据已备好)。
 - **nuScenes 设定(已定)**：测试=`*_clip_09`(5),训=其余45clip全图;抽帧CARLA-SSE`[4,9]`(12测/48训);encoder=concat;全局scale 45(米制,逐clip95分位23~72m差3倍→center逐clip+scale固定45,`--global_scale`/infer`--norm_scale`绑定);**filter开**(去floater)。评测=3init{sfm/mvs(fused.ply)/gsnet}×密化{0/2000/5000/15000}×迭代{7k/15k/30k}+计时+高斯数。
 - **机制(一句话)**：GS-Net=局部稠密化先验,只在"SfM不足 + 3DGS自带密化补不回"的**覆盖洞/外推regime**有用(CARLA环视/nuScenes环视=主场;Waymo前向走廊=无洞=无效;GS-Net能赢的区域=无纹理/远景=PSNR贡献最低,故Waymo难涨是结构性的)。
 - **诚实定位(rebuttal主线)**：CARLA两正(SSE+1.69/CSE+1.89)是硬底;真实数据正结果赌 nuScenes 环视;用"覆盖度/视角充分性"刻画适用域(重叠/环视rig有效,前向disjoint rig无效)。Reviewer A(encoder打平,故用concat不纠结)/C(优雅降级)成立(排310)。
@@ -68,7 +71,8 @@
 - **`run_nusc_hpsweep.py`** = epoch/T调参(复用corr)。`train_gsnet`存final_loss+flush实时日志。
 - **多seed/记录**:`run_nusc --train_seed`(训练种子multiseed,同划分重训);`dump_multiseed`(逐seed+逐clip显式记录SfM/MVS/GSNet/Δ+mean±std→md)。
 - **可视化/诊断**:`make_compare`(test渲染[GT|sfm|gsnet|mvs]并排,`--densify ""`支持CSE baseline/gsnet);**`render_novel`**(自定义外插位姿渲染baseline|gsnet,`--base camK/005.jpg`,`--dump_poses`导world_to_cam JSON);`infer --points_out`导GS-Net预测点云;`read_dense_gaussians+save_xyzrgb_ply`导G_dense;`waymo_cam_overlap`(共视诊断,LOCO+两两矩阵)。⚠️CSE渲染`runs/cse_d2000_s0/<id>/{baseline,gsnet}/test/ours_30000/`。
-- **📄合作者文档(给别人测别的方法,均已发)**:`CARLA_SSE_DATA.md`(SSE帧留出,48训/12测,holdout[4,9])、`CARLA_CSE_DATA.md`(CSE 60奇训/60偶测)、`NUSCENES_NOVEL_VIEW.md`(外插20位姿+偏移表+`--dump_poses`)、`eval_cse.py`(统一PSNR/SSIM/LPIPS-vgg,SSE/CSE通用)。
+- **📄合作者文档(给别人测别的方法,均已发)**:`CARLA_SSE_DATA.md`(SSE帧留出,48训/12测,holdout[4,9])、`CARLA_CSE_DATA.md`(CSE 60奇训/60偶测)、`NUSCENES_NOVEL_VIEW.md`(外插20位姿+偏移表+`--dump_poses`)、`DOWNSTREAM_DATA.md`+`prep_downstream.py`(下游感知评测数据)、`eval_cse.py`(统一PSNR/SSIM/LPIPS-vgg,SSE/CSE通用)。
+- **run_nusc 新开关**:`--train_exclude`(整场景排出训练=LOSO跨场景)、`--train_seed`(训练种子multiseed)。
 - **encoder为啥concat最好(Reviewer A)**:不是真最好=**前4打平(差<0.32在噪声内)**;根因=输入极小(点+3邻居=24维),concat+MLP已有全部信息,几何encoder归纳偏置无处发挥;**edgeconv反更差**=相对特征+maxpool丢绝对位置(任务需定位)、不变性与任务不匹配;归一化又让几何不变性冗余。**⇒瓶颈是损失/target非encoder→轻量encoder principled,增益在formulation**。
 - 数据集无关:`discover_scenes`(认带colmap/的dir);抽帧`make_cam_split mode=extrap`+`frames=[4,9]`。
 - 旧(留用):`eval_cse.py`(给合作者统一CSE评测)、`run_waymo_initcmp`、`run_wide20_dsweep`、`reaggregate.py`、`waymo_cam_overlap`、`run_*_ablation`、`image_feats.py`(已弃)。
