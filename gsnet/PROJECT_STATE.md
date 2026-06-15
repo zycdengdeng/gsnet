@@ -1,7 +1,7 @@
 # GS-Net 项目状态与交接文档 (PROJECT STATE)
 
 > **用途**：记忆压缩后的"续命"文档。读完即可完整理解任务/数据/代码/流程/结果/当前路径，性能不退化。
-> **最后更新**：2026-06-08（nuScenes filt+concat+T5=**+0.28@d15000**;**LOSO真跨场景已铺**(--train_exclude,单折348+5折命令已给,结果未回;45/5=「已见场景未见序列」=CARLA协议同构,诚实写法已定稿,绝不包装成cross-scene);训练种子multiseed结果未回;下游感知数据已备好(prep_downstream+DOWNSTREAM_DATA.md);网络vs论文差异梳理(颜色tanh+权重0.1:10:1);CARLA SSE+1.69硬底;见§0.000）
+> **最后更新**：2026-06-15（**记忆梳理**：①nuScenes SSE 45/5 = PSNR +0.28 但 **SSIM −0.010 / LPIPS +0.006 都更差 = 本质打平(wash)**,不是干净正结果;②跨场景LOSO两折回:331 **+0.21**/299 **+0.29**(仅PSNR,5折剩3,SSIM/LPIPS待拉);③CARLA CSE +1.89 是PSNR-centric(densify2000下SSIM≈持平/LPIPS略好,原版默认+0.08);④**当前最关键待办=核验CARLA SSE的3项指标(PSNR/SSIM/LPIPS)是否都干净**——决定主表怎么搭;⑤「3DGS」=d15000=原版默认密化,表格须统一密化档;⑥45/5诚实写法已定稿(=CARLA协议复刻,绝不称cross-scene)。见§0.000）
 > **分支**：`claude/festive-feynman-80Vw3`（push 到此；用户服务器 `git pull`）
 
 ---
@@ -13,26 +13,38 @@
 - 多行命令易因续行 `\` 后空行而断 → 给用户命令**写成单行**。
 - ⭐**用户明确要求：随时主动更新本 md，不要等被提醒**。每出一个结果/结论/决策就即时落档。
 
-## 0.000 🧭 当前真相速览（READ FIRST，2026-06-03）——下面 §0.0~§8 为历史明细，本节为最新口径
+## 0.000 🧭 当前真相速览（READ FIRST，2026-06-15）——下面 §0.0~§8 为历史明细，本节为最新口径
 **任务**：GS-Net 论文 rebuttal。GS-Net = 稀疏SfM点→一次前向→稠密3DGS高斯，作即插即用init。核心诉求=**在真实数据上做出可信正增益**(Waymo已封死→现攻 nuScenes 环视)，且**不大改网络/行文、❌不用LiDAR、❌不做像素对齐(丢创新)**。
 
-**💎 当前总账（FINAL 口径，2026-06-06）**
+**⚠️⚠️ 指标诚实总闸（2026-06-15，最重要的一条）**：我们的真实数据增益**高度 PSNR-centric，SSIM/LPIPS 经常不背书**——
+- nuScenes SSE 45/5(`nusc_filt` d15000)：SfM 19.07/0.674/0.404 vs GS-Net 19.36/0.664/0.410 → **PSNR +0.28 赢，但 SSIM −0.010、LPIPS +0.006 都是 baseline 略好 ⇒ 本质打平**。
+- CARLA CSE +1.89(densify2000)：PSNR 大赢，SSIM/LPIPS 仅持平~略好(SSIM≈−0.003)。
+- **唯一可能三项全干净的=CARLA SSE +1.69**，但**其 SSIM/LPIPS 尚未核验**（命令：聚合 `runs/*sse*/sse_results.json` 三项均值）。**这是现在第一优先**——若 CARLA SSE 三项都正=主表硬底；若也只有 PSNR=整个故事得改成「PSNR/收敛/效率」框架，不吹感知质量。
+- **写作纪律**：报增益必同时报三项；不 cherry-pick PSNR。**主表/所有表统一密化档**（「3DGS」=d15000=原版默认密化）。
+
+**💎 当前总账（FINAL 口径，2026-06-15）**
 - **CARLA 主表**：**SSE +1.69±0.38=干净硬底**(排310,复现论文+2.08;**densify-on+1.72/off+2.06都成立=不挑密化、原版3DGS鲁棒**)。**⚠️CSE +1.89 带caveat(2026-06-07用户查实)**:那是**densify_until_iter=2000**(非原版默认15000,baseline和gsnet都改)下的数;**原版默认密化(`runs/cse`)只有+0.02**(baseline靠满密化追平)。机制=washout(GS-Net好init少密化即到顶,baseline需满密化追上)。**⇒主表硬底用SSE+1.69;CSE走效率/预算框架(报densify sweep,Δ从+2衰减到+0.02)**。encoder=concat=论文。
 - **🔚Waymo PSNR = 封死(别再开)**：firming(5测/15训多seed)densify-on Δ**−0.52**/off Δ**−0.41** 全负；dsweep 证"+2.4天花板=过度密化打坏SfM的假象"——可信基线(off,21.10)真天花板仅 **+0.71**、GS-Net **−0.14**。之前 wide20 +0.35 是 2场景噪声+坏基线artifact。根因=前向走廊测试视角近训练、无可利用覆盖洞。详见§0.00。
 - **🆕当前主攻 = nuScenes SSE(环视,GS-Net真实数据主场)**：6相机360°ring高共视 ≈ CARLA环视(≠Waymo前向共视<10%)。数据`/mnt/zihanw/gsnet_nusc/`50clip(5场景348/332/331/299/325×10clip,每clip 6相机×10帧=60图,`colmap/dense/{sparse/0含points3D.bin, fused.ply}`齐,米制world→cam,已验证)。
 - **🎉nuScenes 结果(2026-06-07,两批8个变体)——过滤=唯一有效杠杆,+0.28是天花板**：GSNet−SfM逐密化:
-  - **`filt`(开过滤去floater)=赢家**:d5000 **+0.08**、**d15000 +0.28**(基线no_filter同档−0.42/−0.32)→**raw target的floater教坏网络坐实,过滤=对的,锁定**。**这是nuScenes首个正结果**。
+  - **`filt`(开过滤去floater)=赢家**:d5000 **+0.08**、**d15000 +0.28 PSNR**(基线no_filter同档−0.42/−0.32)→**raw target的floater教坏网络坐实,过滤=对的,锁定**。**⚠️但只是PSNR**:同档 SSIM −0.010 / LPIPS +0.006 都是 SfM 略好(SfM 19.07/0.674/0.404 vs GSNet 19.36/0.664/0.410)→**三项合看≈打平(wash),不是干净正结果**。诚实定位:nuScenes SSE = GS-Net ≈ SfM。
   - **其它杠杆全失败(系统试遍)**:`geom`(d15000+0.16<filt);`filtT15`(过滤+T15)**−0.34更差**→**密度证伪**(15头按距离排名对齐→高位头喂噪声标签,T越大越脏);`filtgeom`−0.05(concat>geom on filtered);`iterA2`(conf0.2迭代3pass)**炸成220万高斯/−1.56**=GS-Net在自己稠密输出上严重OOD;recurB≈基线。**⇒filt+concat+T5=+0.28是这套SSE的天花板,继续调参负收益**。
   - **🧠根因反思(用户点破,2026-06-07)**:扩展"不准"的真因=**T个头↔K个最近点"按距离排名1:1对齐"是坏监督**(头本对称却强配第t近,高位头标签任意/噪声,T越大越差=经典set-prediction固定分配问题,DETR踩过)。**正解=Chamfer/匹配损失**(预测T个高斯与目标K做双向Chamfer覆盖,属性按最近匹配,T/K解耦)→密度真能加且不脏、扩展更准="正确地向稠密面学扩展"。**待实现`--match_loss chamfer`重训验证**(用户认同方向,先没动手)。
   - **诚实caveat(同CSE/Waymo模式)**:+0.28在高密化档(d15000,SfM被过度密化到19);**最佳工作点d0(SfM22.5)仍负(−0.43)**;MVS@d0+0.79证明d0有空间,GS-Net d0预测(无密化清理)不够准。定位='改善标准densify-on 3DGS+0.28',未在最佳基线赢。**亮点**:GS-Net LPIPS常优、推理6.5s/优化最快(效率)。
   - **⚠️+0.28靠5clip且逐clip巨散(d15000:+1.39/−0.04/−0.02/+0.62/−0.54,靠348/299撑)**→真不确定性是**测试集太小**,非seed。
 - **❌nuScenes CSE 诊断=弱,放弃(2026-06-07,`waymo_cam_overlap`)**：共视低——两两重叠仅**2~9%**(和Waymo<10%同级,非CARLA高共视!),LOCO最好=cam0(FRONT)被其余5覆盖**~20%**(<25%可行线)。**根因:nuScenes 6相机为360°最小重叠设计(60°间隔),≠CARLA 12相机密集环视(30°)→我"环视=高共视"前提错了,nuScenes共视更像Waymo。** 留整相机CSE=80%视野无人看到→定量CSE死。**⇒CSE不投,改定性外插。**
 - **🎨定性外插可视化(替代量化CSE,2026-06-07,`render_novel`)**：把相机偏移到20个训练没见过的外插位姿(left/right±1~2m/up/fwd/yaw±10~25°/pitch/组合),渲染baseline-init vs GS-Net-init并排([左baseline|右gsnet])。无GT无指标=纯视觉证据"GS-Net稠密init外插时空洞/floater更少"。全5clip×6相机已渲(`/mnt/zihanw/nusc_novel/`)。`--dump_poses`导确切world_to_cam JSON给合作者测别的方法。
-- **🌍真·跨场景 LOSO(2026-06-08,`--train_exclude`已加)**：**当前45/5不是跨场景**——同场景相邻clip中心仅差5~10m(视野半径~45m),测试clip_09的区域被训练clip大量看过=「已见场景的未见序列」。**真跨场景=LOSO**:`--train_exclude 348`把整场景10段排出训练(corr只用其余4场景40段重训),测被留场景的clip_01/05/09。单折348命令已给(~2.5h);5折循环(348/332/331/299/325轮流,串行~10h)命令已给→`runs/nusc_xscene_<S>`。⚠️聚合不能直接用dump_multiseed(每折只测自己3clip)→**待写`dump_loso.py`**。**机制预判**:GS-Net学的是局部稠密化先验(非场景级),城市驾驶局部统计同域→理论上应能泛化;且只有5场景没法"筛相似"(留1只剩4全得用),scene_similarity可当预诊断(解释用,非筛选用)。
+- **🌍真·跨场景 LOSO(2026-06-15更新,`--train_exclude`已加)**：**当前45/5不是跨场景**——同场景相邻clip中心仅差5~10m(视野半径~45m),测试clip_09的区域被训练clip大量看过=「已见场景的未见序列」。**真跨场景=LOSO**:`--train_exclude 348`把整场景10段排出训练(corr只用其余4场景40段重训),测被留场景的clip_01/05/09。`runs/nusc_xscene_<S>`。**🆕已回两折(PSNR)**:331 **+0.21**、299 **+0.29**(≈同场景45/5的+0.28→跨场景没掉,泛化成立的信号)。**⚠️剩3折未回**:348/332/325;且**两折的SSIM/LPIPS尚未拉**(同样要核验是否只PSNR赢)。⚠️聚合不能直接用dump_multiseed(每折只测自己3clip)→**待写`dump_loso.py`**(逐折test自己clip,再跨折聚合)。**机制预判**:GS-Net学的是局部稠密化先验(非场景级),城市驾驶局部统计同域→理论上应能泛化;且只有5场景没法"筛相似"(留1只剩4全得用),scene_similarity可当预诊断(解释用,非筛选用)。
 - **✍️45/5的诚实写法(2026-06-08定稿,别包装成跨场景!)**：**关键发现:论文自己的CARLA SSE协议就是「已见场景的未见序列」**(测试序列110与训练101-109同场景/town)→nuScenes 45/5是它的**精确复刻**。写法:"Following the CARLA protocol, we hold out one clip per scene; test clips are **unseen sequences**(帧/轨迹/重建从未在训练出现),drawn from the same five scenes"——术语用**held-out/unseen clips**,主动交代同场景(先于审稿人),协议一致性是加分。**跨场景claim由CARLA LOSO(+1.30)承担**;nuScenes LOSO好就并排报,差就limitation("4训练场景diversity不足,CARLA大池子可泛化")。**绝不暗示45/5=cross-scene**(一查就穿,诚信问题>结果差)。
 - **🔧网络vs论文的差异(2026-06-08梳理,rebuttal备用)**：后处理仅一处不同——**颜色偏移激活 sigmoid(论文,只能调亮)→tanh(可亮可暗)**;训练损失权重 等权(论文)→**0.1:10:1(w_rot:w_pos:其余)**(归一化后量级失衡,调平)。其余(位置tanh/尺度sigmoid/四元数单位化/不透明度tanh)与论文一致。**=最终配方`tanh:0.1:10:1`的全部差异,增益来自这个formulation而非encoder**。
 - **📋下游任务验证(回应Reviewer"只在3DGS内评估、没证data reuse价值",2026-06-07,用户去别窗口做)**：**感知保真度**——预训练模型M跑{真值/baseline渲染/gsnet渲染},以**M(真值)当pseudo-GT**,比`metric(M(gsnet渲染),M(真值)) vs (baseline)`。用户的**Depth_Seg_eval库**(深度DepthAnythingV2/分割Mask2Former/SAM边缘,要`_eval_frames/<cam>/{gen,gt}/`格式)。**已备好**:`prep_downstream.py`(把我们渲染软链成该格式,`--mode cse/nusc`)+`DOWNSTREAM_DATA.md`(数据说明已发)。场景:CARLA CSE(`runs/cse_d2000_s0`,大增益/合成域gap→首推深度) + nuScenes SSE(`runs/nusc_filt/eval`,真实域无gap)。
-- **🔬在跑/待办(2026-06-08)**：①训练种子multiseed(`filt_seed1-3`,`dump_multiseed`→`runs/nusc_filt_multiseed.md`)钉+0.28训练方差——**结果未回**。②**LOSO跨场景**(单折348先看信号,5折过夜)——**结果未回**;待写`dump_loso.py`聚合。③扩测试集10clip(每场景clip_08+09,解决clip散度)。④Chamfer损失(治本扩展)。⑤下游感知(用户别窗口,数据已备好)。
+- **🔬待办优先级(2026-06-15)**：
+  - **①(最高)核验 CARLA SSE 三项指标**(PSNR/SSIM/LPIPS 均值,聚合 `runs/*sse*/sse_results.json`)——决定主表是否有三项全干净的硬底。**未跑**。
+  - **②补齐 LOSO 5折**(348/332/325 三折未回)+拉两折(331/299)的 SSIM/LPIPS+写 `dump_loso.py` 聚合(逐折test自己clip)。
+  - ③训练种子multiseed(`filt_seed1-3`,`dump_multiseed`→`runs/nusc_filt_multiseed.md`)钉+0.28训练方差——**结果未回**。
+  - ④扩测试集10clip(每场景clip_08+09,解决clip逐clip巨散)。
+  - ⑤Chamfer/匹配损失(`--match_loss chamfer`,治本扩展,用户认同方向,未实现)。
+  - ⑥下游感知(用户别窗口,`prep_downstream`+`DOWNSTREAM_DATA.md`数据已备好)。
 - **nuScenes 设定(已定)**：测试=`*_clip_09`(5),训=其余45clip全图;抽帧CARLA-SSE`[4,9]`(12测/48训);encoder=concat;全局scale 45(米制,逐clip95分位23~72m差3倍→center逐clip+scale固定45,`--global_scale`/infer`--norm_scale`绑定);**filter开**(去floater)。评测=3init{sfm/mvs(fused.ply)/gsnet}×密化{0/2000/5000/15000}×迭代{7k/15k/30k}+计时+高斯数。
 - **机制(一句话)**：GS-Net=局部稠密化先验,只在"SfM不足 + 3DGS自带密化补不回"的**覆盖洞/外推regime**有用(CARLA环视/nuScenes环视=主场;Waymo前向走廊=无洞=无效;GS-Net能赢的区域=无纹理/远景=PSNR贡献最低,故Waymo难涨是结构性的)。
 - **诚实定位(rebuttal主线)**：CARLA两正(SSE+1.69/CSE+1.89)是硬底;真实数据正结果赌 nuScenes 环视;用"覆盖度/视角充分性"刻画适用域(重叠/环视rig有效,前向disjoint rig无效)。Reviewer A(encoder打平,故用concat不纠结)/C(优雅降级)成立(排310)。
@@ -49,7 +61,7 @@
 8. **310清算完成(reaggregate.py剔310)**：所有rebuttal结论剔310后**都成立且更干净、无需重跑**——Reviewer A(encoder最终配方顶4打平+1.8~2.1)、Reviewer C(优雅降级)、最终配方T5@M3(T5=27.19最好)、主表SSE+1.69。详见§0.00。
 9. **⭐CSE washout确认=真增益(2026-06-03)**：CARLA CSE×**densify-off**(剔310,`runs/cse_densify_off`)=base17.10/gsnet18.38→**Δ+1.28**(vs densify-on +0.02),LPIPS0.346→0.295,优化快40%(23.6→14.8min)。→**GS-Net多视角一致init对跨传感器真有用,只是被30k源视角密化磨平**。⚠️tradeoff:densify-off绝对PSNR更低(18.38<19.65),故只能**同设置内**比;写法=效率/预算角度(同预算/不靠激进密化时+1.3+LPIPS+收敛快)或扫densify_until_iter找甜点。**⇒Waymo跨传感器赢法**:已给waymo_sse加--train_extra。⚠️**但 front→side 经`waymo_cam_overlap`查实=死局**:侧视点被前视覆盖仅**6-9%**(cam3/4垂直±y,前视组最多45°,大视角跳变+SfM匹配失败)→front→side注定≈0,**别跑**。改走:①留一相机(合成被其余4相机覆盖最好的,LOCO);②**稀疏时序×精简变体×densify-off**(同相机少帧=已观测但欠约束,避开'未观测'死穴,更看好)。`waymo_cam_overlap`已扩LOCO+两两重叠矩阵,待用户跑挑viable目标。 **结果(2026-06-03)**:两两重叠**全≤9%**(Waymo 5相机近乎互不共视=各自沿路独立条带);LOCO最高=合成cam0(FRONT)被其余4覆盖23%(10275)/38%(15868),其余<20%。**深层结论**:GS-Net机制=利用'多相机共视冗余→SfM空洞'去填;CARLA环视高共视→+1.7,Waymo宽基线rig共视<10%→几乎无结构可利用→中性/微负是几何决定的。**⇒主线rebuttal用'覆盖度刻画适用域'诚实框架**(GS-Net受益重叠/环视rig=CARLA/nuScenes,宽基线disjoint rig=Waymo无效,用inter-cam覆盖量化边界)——比硬凑Waymo增益更强。**仅剩长射**:①合成cam0(唯一覆盖较高)×densify-off×精简变体(赌一把,等消融出dens_only ckpt);②稀疏时序×lean×densify-off(期望一般,稀疏sweep已负)。
 
-**⏳ 当前在跑/待cat**：**nuScenes SSE**(`run_nusc`,无人值守GPU容错)→ `runs/nusc/nusc_eval.md`。用户跑完贴回,我判读+决定 hpsweep / CSE。
+**⏳ 当前在跑/待cat（2026-06-15）**：见上「待办优先级」——首推核验 CARLA SSE 三项指标 + 补齐 LOSO 5折/拉 SSIM-LPIPS。nuScenes SSE 主跑已完(`runs/nusc_filt`,见上结果=PSNR+0.28但三项打平)。
 
   **已收并分析(全部DONE,别再cat/重测)**：
   - ✅CARLA SSE+1.69±0.38 / CSE+1.89±0.1(concat,多seed钉死,主表)。
