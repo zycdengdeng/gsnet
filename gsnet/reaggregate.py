@@ -54,6 +54,8 @@ def main():
     ap.add_argument("--root", required=True, help="dir to search for sse_results.json")
     ap.add_argument("--exclude", nargs="+", default=["310"],
                     help="sequence ids/substrings to drop before averaging")
+    ap.add_argument("--out", default="",
+                    help="where to save the table (default: <root>/reaggregated_no<excl>.md)")
     args = ap.parse_args()
 
     files = sorted(glob.glob(os.path.join(args.root, "**", "sse_results.json"),
@@ -72,15 +74,24 @@ def main():
                                                     and b.get("PSNR") is not None) else None
         rows.append((label, g, b, delta, res.get("_ids", []), all_ids))
 
-    print(f"\n# Re-aggregated EXCLUDING {args.exclude}  (under {args.root})\n")
-    print("| config | gsnet PSNR | baseline PSNR | ΔPSNR | gsnet SSIM | baseline SSIM "
-          "| gsnet LPIPS | baseline LPIPS | kept ids |")
-    print("|---|---|---|---|---|---|---|---|---|")
     def fmt(x, f="{:.3f}"): return f.format(x) if isinstance(x, (int, float)) else "-"
+    lines = [f"# Re-aggregated EXCLUDING {args.exclude}  (under {args.root})", "",
+             "| config | gsnet PSNR | baseline PSNR | ΔPSNR | gsnet SSIM | baseline SSIM "
+             "| gsnet LPIPS | baseline LPIPS | kept ids |",
+             "|---|---|---|---|---|---|---|---|---|"]
     for label, g, b, dl, kept, allids in rows:
-        print(f"| {label} | {fmt(g.get('PSNR'),'{:.2f}')} | {fmt(b.get('PSNR'),'{:.2f}')} "
-              f"| {fmt(dl,'{:+.2f}')} | {fmt(g.get('SSIM'))} | {fmt(b.get('SSIM'))} "
-              f"| {fmt(g.get('LPIPS'))} | {fmt(b.get('LPIPS'))} | {','.join(kept)} |")
+        lines.append(
+            f"| {label} | {fmt(g.get('PSNR'),'{:.2f}')} | {fmt(b.get('PSNR'),'{:.2f}')} "
+            f"| {fmt(dl,'{:+.2f}')} | {fmt(g.get('SSIM'))} | {fmt(b.get('SSIM'))} "
+            f"| {fmt(g.get('LPIPS'))} | {fmt(b.get('LPIPS'))} | {','.join(kept)} |")
+    table = "\n".join(lines)
+
+    out = args.out or os.path.join(
+        args.root, f"reaggregated_no{'_'.join(args.exclude)}.md")
+    with open(out, "w") as fp:
+        fp.write(table + "\n")
+    print("\n" + table)
+    print(f"\n-> saved {out}")
 
 
 if __name__ == "__main__":

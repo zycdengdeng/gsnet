@@ -20,19 +20,19 @@
 
 > 参数为 encoder 子模块近似值；精确总参数见脚本输出的 `#Params(K)` 列。仓库另有 `attention_v2`/`geoedge` 两个加强版（更强注意力/几何图卷积），实测也无稳定提升，正文不必放。
 
-## 3. 结果（最终配方 tanh:0.1:10:1，剔崩坏场景 310，4 序列，baseline 24.56）
-| Encoder | PSNR | Δ |
-|---|---|---|
-| **Concat-MLP (Ours)** | **26.65** | **+2.09** |
-| Explicit-Geometry | 26.51 | +1.95 |
-| MLP-only | 26.40 | +1.84 |
-| Self-Attention | 26.33 | +1.77 |
-| EdgeConv | 25.37 | +0.81 |
+## 3. 结果（最终配方 tanh:0.1:10:1，剔崩坏场景 310）
+跑完用 §6 命令出表（数字从 `reaggregated_no310.md` 填，不在本文档硬编码以免过时）：
 
-前 4 名差 0.32 dB = 统计打平；只有 EdgeConv 明显掉队（见 §4）。
-**对照**：换成默认配方（sigmoid, 等权）时 encoder 反而有别（geom 26.51 领先 ~1 dB）→ **好 formulation 把 encoder 的差异吸收掉了**，这本身就是机制证据。
+| Encoder | PSNR | SSIM | LPIPS | Δ PSNR |
+|---|---|---|---|---|
+| **Concat-MLP (Ours)** | | | | |
+| Explicit-Geometry | | | | |
+| MLP-only | | | | |
+| Self-Attention | | | | |
+| EdgeConv | | | | |
 
-> ⚠️ 表内只有 PSNR；定稿前用 §6 命令把 SSIM/LPIPS 拉全一起报。
+**预期/历史结论**：前 4 名差 <0.3 dB = 统计打平（在 ±0.5 dB 训练噪声内）；只有 EdgeConv 明显掉队（见 §4）。
+**对照**：换成默认配方（sigmoid, 等权）时 encoder 反而有别，几何 encoder 领先约 1 dB → **好 formulation 把 encoder 的差异吸收掉了**，这本身就是机制证据（默认配方表同样用 §6 命令出）。
 
 ## 4. 为什么打平 / 为什么 EdgeConv 掉队（回 Reviewer A 的论据）
 - **输入只有 24 维**（中心+3邻居），concat-MLP 已无损吃下全部信息，几何归纳偏置无处发挥。
@@ -50,12 +50,13 @@
 ## 6. 怎么查 / 复现结果
 结果在服务器 `runs/`（不在仓库）。
 
-**查已有结果（论文用的剔 310 干净数，秒出、不重跑，现已直接给三项指标）：**
+**查已有结果（论文用的剔 310 干净数，秒出、不重跑，三项指标齐，且会存盘）：**
 ```bash
 cd /mnt/zihanw/gaussian-splatting && git pull origin claude/festive-feynman-80Vw3
 python -m gsnet.reaggregate --root runs/encoder_ablation_final --exclude 310   # 最终配方
 python -m gsnet.reaggregate --root runs/encoder_ablation        --exclude 310   # 默认配方
 ```
+打印的同时存到 `runs/encoder_ablation_final/reaggregated_no310.md`（可用 `--out` 改路径）——§3 的表直接从这个文件抄。
 含 310 的原始聚合表：`runs/encoder_ablation{,_final}/encoder_ablation.md`。
 
 **从零复现（一条命令切配方）：**
