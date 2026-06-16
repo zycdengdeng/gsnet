@@ -21,18 +21,10 @@
 > 参数为 encoder 子模块近似值；精确总参数见脚本输出的 `#Params(K)` 列。仓库另有 `attention_v2`/`geoedge` 两个加强版（更强注意力/几何图卷积），实测也无稳定提升，正文不必放。
 
 ## 3. 结果（最终配方 tanh:0.1:10:1，剔崩坏场景 310）
-跑完用 §6 命令出表（数字从 `reaggregated_no310.md` 填，不在本文档硬编码以免过时）：
-
-| Encoder | PSNR | SSIM | LPIPS | Δ PSNR |
-|---|---|---|---|---|
-| **Concat-MLP (Ours)** | | | | |
-| Explicit-Geometry | | | | |
-| MLP-only | | | | |
-| Self-Attention | | | | |
-| EdgeConv | | | | |
+> **数据表不在本文档**——跑 §6 命令后自动落盘到 `runs/encoder_ablation_final/reaggregated_no310.md`（含 PSNR/SSIM/LPIPS 三项 + Δ），直接拿那个文件进论文，不用手填。
 
 **预期/历史结论**：前 4 名差 <0.3 dB = 统计打平（在 ±0.5 dB 训练噪声内）；只有 EdgeConv 明显掉队（见 §4）。
-**对照**：换成默认配方（sigmoid, 等权）时 encoder 反而有别，几何 encoder 领先约 1 dB → **好 formulation 把 encoder 的差异吸收掉了**，这本身就是机制证据（默认配方表同样用 §6 命令出）。
+**对照**：换成默认配方（sigmoid, 等权）时 encoder 反而有别，几何 encoder 领先约 1 dB → **好 formulation 把 encoder 的差异吸收掉了**，这本身就是机制证据（默认配方表落盘到 `runs/encoder_ablation/reaggregated_no310.md`）。
 
 ## 4. 为什么打平 / 为什么 EdgeConv 掉队（回 Reviewer A 的论据）
 - **输入只有 24 维**（中心+3邻居），concat-MLP 已无损吃下全部信息，几何归纳偏置无处发挥。
