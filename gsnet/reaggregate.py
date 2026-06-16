@@ -70,15 +70,17 @@ def main():
         b = res.get("baseline", {})
         delta = (g.get("PSNR") - b.get("PSNR")) if (g.get("PSNR") is not None
                                                     and b.get("PSNR") is not None) else None
-        rows.append((label, g.get("PSNR"), b.get("PSNR"), delta, res.get("_ids", []), all_ids))
+        rows.append((label, g, b, delta, res.get("_ids", []), all_ids))
 
     print(f"\n# Re-aggregated EXCLUDING {args.exclude}  (under {args.root})\n")
-    print("| config | gsnet PSNR | baseline | Δ | kept ids | all ids |")
-    print("|---|---|---|---|---|---|")
-    def fmt(x, f="{:.2f}"): return f.format(x) if isinstance(x, (int, float)) else "-"
-    for label, gp, bp, dl, kept, allids in rows:
-        print(f"| {label} | {fmt(gp)} | {fmt(bp)} | {fmt(dl,'{:+.2f}')} "
-              f"| {','.join(kept)} | {','.join(allids)} |")
+    print("| config | gsnet PSNR | baseline PSNR | ΔPSNR | gsnet SSIM | baseline SSIM "
+          "| gsnet LPIPS | baseline LPIPS | kept ids |")
+    print("|---|---|---|---|---|---|---|---|---|")
+    def fmt(x, f="{:.3f}"): return f.format(x) if isinstance(x, (int, float)) else "-"
+    for label, g, b, dl, kept, allids in rows:
+        print(f"| {label} | {fmt(g.get('PSNR'),'{:.2f}')} | {fmt(b.get('PSNR'),'{:.2f}')} "
+              f"| {fmt(dl,'{:+.2f}')} | {fmt(g.get('SSIM'))} | {fmt(b.get('SSIM'))} "
+              f"| {fmt(g.get('LPIPS'))} | {fmt(b.get('LPIPS'))} | {','.join(kept)} |")
 
 
 if __name__ == "__main__":

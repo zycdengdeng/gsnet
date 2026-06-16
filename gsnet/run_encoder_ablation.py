@@ -44,10 +44,10 @@ def run(cmd, gpu=None):
     subprocess.run([str(c) for c in cmd], check=True, cwd=REPO, env=env)
 
 
-def count_params(enc):
+def count_params(enc, M=3):
     import torch  # noqa
     from gsnet.model import GSNet, GSNetConfig
-    return sum(p.numel() for p in GSNet(GSNetConfig(encoder_type=enc)).parameters())
+    return sum(p.numel() for p in GSNet(GSNetConfig(encoder_type=enc, M=M)).parameters())
 
 
 def train_all(args):
@@ -62,7 +62,10 @@ def train_all(args):
             run([PY, "-m", "gsnet.train_gsnet", "--corr_dir", args.corr_dir,
                  "--out_dir", out, "--encoder_type", enc,
                  "--epochs", str(args.epochs), "--batch_size", str(args.batch_size),
-                 "--w_rot", str(args.w_rot)], gpu=gpu)
+                 "--M", str(args.M), "--in_memory", "1",
+                 "--color_activation", args.color_activation,
+                 "--w_rot", str(args.w_rot), "--w_pos", str(args.w_pos),
+                 "--w_scale", str(args.w_scale)], gpu=gpu)
         finally:
             gpu_q.put(gpu)
 
@@ -86,7 +89,7 @@ def aggregate(args):
     rows = []
     for enc in args.encoders:
         out = os.path.join(args.out_dir, enc)
-        row = {"encoder": enc, "params_K": count_params(enc) / 1e3}
+        row = {"encoder": enc, "params_K": count_params(enc, args.M) / 1e3}
         tt = os.path.join(out, "train_times.json")
         if os.path.exists(tt):
             row["train_min"] = json.load(open(tt))["total_seconds"] / 60
@@ -130,8 +133,15 @@ def main():
     ap.add_argument("--gpus", type=int, nargs="+", default=[4, 5, 6, 7])
     ap.add_argument("--epochs", type=int, default=200)
     ap.add_argument("--batch_size", type=int, default=512)
+    ap.add_argument("--M", type=int, default=3, help="neighbors; must match --corr_dir build")
     ap.add_argument("--iterations", type=int, default=30000)
+    # Recipe knobs: defaults reproduce the DEFAULT recipe (sigmoid, equal weights)
+    # where the encoder matters; pass --color_activation tanh --w_rot 0.1 --w_pos 10
+    # to reproduce the FINAL recipe (tanh:0.1:10:1) where encoders tie.
+    ap.add_argument("--color_activation", default="sigmoid", choices=["sigmoid", "tanh"])
     ap.add_argument("--w_rot", type=float, default=1.0)
+    ap.add_argument("--w_pos", type=float, default=1.0)
+    ap.add_argument("--w_scale", type=float, default=1.0)
     ap.add_argument("--skip_train", action="store_true")
     ap.add_argument("--skip_eval", action="store_true")
     args = ap.parse_args()
