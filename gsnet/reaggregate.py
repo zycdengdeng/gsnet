@@ -77,13 +77,13 @@ def main():
     def fmt(x, f="{:.3f}"): return f.format(x) if isinstance(x, (int, float)) else "-"
     lines = [f"# Re-aggregated EXCLUDING {args.exclude}  (under {args.root})", "",
              "| config | gsnet PSNR | baseline PSNR | ΔPSNR | gsnet SSIM | baseline SSIM "
-             "| gsnet LPIPS | baseline LPIPS | kept ids |",
-             "|---|---|---|---|---|---|---|---|---|"]
+             "| gsnet LPIPS | baseline LPIPS |",
+             "|---|---|---|---|---|---|---|---|"]
     for label, g, b, dl, kept, allids in rows:
         lines.append(
             f"| {label} | {fmt(g.get('PSNR'),'{:.2f}')} | {fmt(b.get('PSNR'),'{:.2f}')} "
             f"| {fmt(dl,'{:+.2f}')} | {fmt(g.get('SSIM'))} | {fmt(b.get('SSIM'))} "
-            f"| {fmt(g.get('LPIPS'))} | {fmt(b.get('LPIPS'))} | {','.join(kept)} |")
+            f"| {fmt(g.get('LPIPS'))} | {fmt(b.get('LPIPS'))} |")
     table = "\n".join(lines)
 
     out = args.out or os.path.join(
