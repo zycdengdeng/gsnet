@@ -52,12 +52,17 @@ def one_level(label, gdense_iter, subsample, args):
              "--gdense_subsample", str(subsample)])
     if not os.path.exists(os.path.join(model, "gsnet_latest.pt")):
         run([PY, "-m", "gsnet.train_gsnet", "--corr_dir", corr,
-             "--out_dir", model, "--epochs", str(args.epochs)], gpu=args.gpus[0])
-    run([PY, "-m", "gsnet.run_sse", "--io_dir", args.io_dir,
-         "--sparse_root", args.sparse_root,
-         "--ckpt", os.path.join(model, "gsnet_latest.pt"),
-         "--out_dir", sse, "--skip_baseline",
-         "--gpus", *[str(g) for g in args.gpus]])
+             "--out_dir", model, "--epochs", str(args.epochs),
+             "--encoder_type", args.encoder_type,
+             "--color_activation", args.color_activation,
+             "--w_rot", str(args.w_rot), "--w_pos", str(args.w_pos)], gpu=args.gpus[0])
+    sse_cmd = [PY, "-m", "gsnet.run_sse", "--io_dir", args.io_dir,
+               "--sparse_root", args.sparse_root,
+               "--ckpt", os.path.join(model, "gsnet_latest.pt"),
+               "--out_dir", sse, "--gpus", *[str(g) for g in args.gpus]]
+    if not args.eval_baseline:                  # baseline is constant across levels
+        sse_cmd.append("--skip_baseline")
+    run(sse_cmd)
 
     g = json.load(open(os.path.join(sse, "sse_results.json")))["averages"]["gsnet"]
     return {"label": label, "gdense_iter": gdense_iter, "subsample": subsample,
@@ -75,6 +80,16 @@ def main():
     ap.add_argument("--subsamples", type=float, nargs="+", default=[1.0, 0.5, 0.25, 0.1])
     ap.add_argument("--epochs", type=int, default=200)
     ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--eval_baseline", action="store_true",
+                    help="also evaluate the SfM-init baseline (fills ΔPSNR; baseline is "
+                         "constant across levels, so running it on one level is enough)")
+    # Recipe knobs: defaults reproduce the original sup_sens runs (default recipe:
+    # concat, sigmoid, equal weights). For consistency with the final-recipe main
+    # table, pass --color_activation tanh --w_rot 0.1 --w_pos 10.
+    ap.add_argument("--encoder_type", default="concat")
+    ap.add_argument("--color_activation", default="sigmoid", choices=["sigmoid", "tanh"])
+    ap.add_argument("--w_rot", type=float, default=1.0)
+    ap.add_argument("--w_pos", type=float, default=1.0)
     args = ap.parse_args()
 
     levels = ([(f"iter{it}", it, 1.0) for it in args.iters]
