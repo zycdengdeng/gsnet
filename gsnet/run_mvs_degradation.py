@@ -121,52 +121,69 @@ def main():
         return os.path.join(o, "gdense", label, sid, "point_cloud",
                             f"iteration_{args.iterations}", "point_cloud.ply")
 
+    nmap = {lab: (k, n) for lab, k, n in levels}
+
+    # ---- Phase A: re-optimize G_dense for ALL non-clean levels, fanned out
+    # across every GPU from t=0 (this is the dominant cost; clean reuses the
+    # original G_dense so it has no jobs here). ----
+    gd_jobs = [(label, sid) for label, _, _ in levels if label != "clean"
+               for sid, _, _ in seqs if not os.path.exists(lvl_gdense(label, sid))]
+    print(f"[mvs] Phase A: {len(gd_jobs)} G_dense (re)builds across "
+          f"{len(args.gpus)} GPUs", flush=True)
+
+    def gd_fn(job, gpu):
+        label, sid = job
+        if os.path.exists(lvl_gdense(label, sid)):
+            return
+        keep, noise = nmap[label]
+        mvs = os.path.join(args.io_dir, f"{sid}_dense", "sparse", "0", "points3D.ply")
+        scene = os.path.join(args.io_dir, f"{sid}_dense")
+        assert os.path.exists(mvs), f"missing MVS ply {mvs}"
+        dply = os.path.join(o, "mvs", label, f"{sid}.ply")
+        n0, n1 = degrade_mvs(mvs, dply, keep, noise, sid)
+        print(f"[degrade {label}] {sid}: {n0} -> {n1}", flush=True)
+        mp = os.path.join(o, "gdense", label, sid)
+        on_gpu([PY, "train.py", "-s", scene, "-m", mp, "--init_pcd", dply,
+                "--iterations", str(args.iterations),
+                "--save_iterations", str(args.iterations),
+                "--test_iterations", str(args.iterations),
+                "--disable_viewer", "--quiet"], gpu)
+
+    if gd_jobs:
+        _, f = run_jobs(gd_jobs, args.gpus, gd_fn, label="gdense", **pool)
+        if f:
+            print(f"[mvs] WARN gdense failed: {f}", flush=True)
+
+    # ---- Phase B: per level, corr -> train -> SSE ----
     for label, keep, noise in levels:
         print(f"\n===== level {label} (keep={keep}, noise={noise}) =====", flush=True)
 
-        # ---- 1+2) degrade MVS -> re-optimize G_dense (skipped for clean) ----
-        if label != "clean":
-            def gd_fn(item, gpu):
-                sid, sparse, _ = item
-                if os.path.exists(lvl_gdense(label, sid)):
-                    return
-                mvs = os.path.join(args.io_dir, f"{sid}_dense", "sparse", "0", "points3D.ply")
-                scene = os.path.join(args.io_dir, f"{sid}_dense")
-                assert os.path.exists(mvs), f"missing MVS ply {mvs}"
-                dply = os.path.join(o, "mvs", label, f"{sid}.ply")
-                n0, n1 = degrade_mvs(mvs, dply, keep, noise, sid)
-                print(f"[degrade {label}] {sid}: {n0} -> {n1}", flush=True)
-                mp = os.path.dirname(os.path.dirname(os.path.dirname(lvl_gdense(label, sid))))
-                on_gpu([PY, "train.py", "-s", scene, "-m", mp, "--init_pcd", dply,
-                        "--iterations", str(args.iterations),
-                        "--save_iterations", str(args.iterations),
-                        "--test_iterations", str(args.iterations),
-                        "--disable_viewer", "--quiet"], gpu)
-            todo = [s for s in seqs if not os.path.exists(lvl_gdense(label, s[0]))]
-            print(f"[mvs] {label} gdense: {len(todo)}/{len(seqs)} to (re)build", flush=True)
-            if todo:
-                _, f = run_jobs(todo, args.gpus, gd_fn, label=f"gdense-{label}", **pool)
-                if f:
-                    print(f"[mvs] WARN {label} gdense failed: {[x[0] for x in f]}", flush=True)
-
-        # ---- 3) correspondences from this level's G_dense ----
+        # 3) correspondences from this level's G_dense (CPU, parallelized)
         corr = os.path.join(o, "corr", label)
         if not os.path.exists(os.path.join(corr, "build_times.json")):
             os.makedirs(corr, exist_ok=True)
-            stats = []
+            tasks = []
             for sid, sparse, _ in seqs:
                 gd = orig_gdense(sid) if label == "clean" else lvl_gdense(label, sid)
+                outp = os.path.join(corr, f"{sid}.npz")
                 if not os.path.exists(gd):
                     print(f"[corr {label}] skip {sid}: missing G_dense", flush=True)
                     continue
-                stats.append(build_for_sequence(sparse, gd,
-                             os.path.join(corr, f"{sid}.npz"), K=5, M=3))
+                if os.path.exists(outp):
+                    continue
+                tasks.append((sparse, gd, outp))
+            import concurrent.futures as cf
+            stats = []
+            with cf.ProcessPoolExecutor(max_workers=8) as ex:
+                futs = [ex.submit(build_for_sequence, s, g, ot, K=5, M=3) for s, g, ot in tasks]
+                for fu in cf.as_completed(futs):
+                    stats.append(fu.result())
             json.dump({"sequences": stats}, open(os.path.join(corr, "build_times.json"), "w"),
                       indent=2)
         else:
             print(f"[skip corr] {corr}", flush=True)
 
-        # ---- 4) train GS-Net (final recipe) ----
+        # 4) train GS-Net (final recipe)
         model = os.path.join(o, "model", label)
         ckpt = os.path.join(model, "gsnet_latest.pt")
         if not os.path.exists(ckpt):
@@ -180,7 +197,7 @@ def main():
         else:
             print(f"[skip train] {ckpt}", flush=True)
 
-        # ---- 5) SSE eval (baseline + gsnet) ----
+        # 5) SSE eval (baseline + gsnet)
         sse = os.path.join(o, "sse", label)
         if not os.path.exists(os.path.join(sse, "sse_results.json")):
             sh([PY, "-m", "gsnet.run_sse", "--io_dir", args.io_dir,
